@@ -30,7 +30,7 @@
         <logback.version>1.5.15</logback.version>
         <jackson.version>2.18.3</jackson.version>
         <junit.version>5.11.4</junit.version>
-        <assertj.version>3.27.3</assertj.version>
+        <assertj.version>3.27.7</assertj.version>
     </properties>
 
     <dependencyManagement>
