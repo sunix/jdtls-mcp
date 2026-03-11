@@ -75,10 +75,10 @@ jdtls-mcp/
 
 ## Prerequisites
 
-| Tool | Version |
-|------|---------|
-| Java | 17+     |
-| Maven | 3.9+   |
+| Tool | Version | Notes |
+|------|---------|-------|
+| Java | 17+    | Must be on `PATH` |
+| Maven | 3.9+ | For building |
 
 ## Building
 
@@ -88,33 +88,45 @@ cd jdtls-mcp
 mvn package
 ```
 
-## Running
+The built product lands at:
+
+```
+org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/
+├── linux/gtk/x86_64/
+├── linux/gtk/aarch64/
+├── macosx/cocoa/x86_64/
+├── macosx/cocoa/aarch64/
+└── win32/win32/x86_64/
+```
+
+Each platform folder contains:
+
+```
+plugins/
+  org.eclipse.equinox.launcher_<version>.jar
+configuration/
+  config.ini
+```
+
+> [!TIP]
+> Set `PRODUCT_DIR` to your platform's folder to simplify the commands below.
+>
+> **Linux x86_64**
+> ```bash
+> export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
+> ```
+> **macOS arm64 (Apple Silicon)**
+> ```bash
+> export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/macosx/cocoa/aarch64"
+> ```
+
+## Running manually
 
 ```bash
 java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
-     -jar plugins/org.eclipse.equinox.launcher_*.jar \
-     -configuration config_linux \
+     -jar "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar" \
+     -configuration "$PRODUCT_DIR/configuration" \
      -data /path/to/your-java-workspace
-```
-
-## MCP client configuration
-
-Add this to your MCP client (e.g. Claude Desktop `claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "jdtls": {
-      "command": "java",
-      "args": [
-        "-Declipse.application=org.eclipse.jdt.ls.mcp.app",
-        "-jar", "/path/to/jdtls-mcp/plugins/org.eclipse.equinox.launcher_1.x.x.jar",
-        "-configuration", "/path/to/jdtls-mcp/config_linux",
-        "-data", "/path/to/your-java-project"
-      ]
-    }
-  }
-}
 ```
 
 ## Available MCP tools
@@ -130,8 +142,218 @@ Add this to your MCP client (e.g. Claude Desktop `claude_desktop_config.json`):
 
 All position-based tools use **0-based** line and character offsets (LSP convention).
 
-Each tool method is also annotated with langchain4j `@Tool`/`@P` so it can be
-called directly by a langchain4j agent without the MCP transport layer.
+---
+
+## Testing with MCP clients
+
+The examples below all use this sample Java project as the target workspace.
+Create it once; then point any client at it.
+
+```bash
+mkdir -p /tmp/hello-java/src/main/java/com/example
+cat > /tmp/hello-java/src/main/java/com/example/Greeter.java << 'EOF'
+package com.example;
+
+/**
+ * A simple greeter.
+ */
+public class Greeter {
+
+    private final String name;
+
+    public Greeter(String name) {
+        this.name = name;
+    }
+
+    /**
+     * Returns a personalised greeting.
+     */
+    public String greet() {
+        return "Hello, " + name + "!";
+    }
+
+    public static void main(String[] args) {
+        Greeter g = new Greeter("World");
+        System.out.println(g.greet());
+    }
+}
+EOF
+```
+
+The commands in each section refer to `$PRODUCT_DIR` (set above) and assume the
+jdtls-mcp product has been built.
+
+> [!IMPORTANT]
+> The `org.eclipse.equinox.launcher_*.jar` glob must be replaced with the
+> actual jar filename in your build output, for example:
+> ```bash
+> # Find the exact name after building:
+> ls "$PRODUCT_DIR/plugins/" | grep equinox.launcher
+> # → org.eclipse.equinox.launcher_1.6.900.v20240613-2009.jar
+> ```
+> In all configuration files below, replace the glob with that exact filename.
+
+---
+
+### GitHub Copilot in VSCode
+
+> **Requires:** VSCode ≥ 1.99 with the GitHub Copilot extension (MCP support is
+> enabled by default; no feature flag needed).
+
+1. **Add the MCP server** by creating (or editing) `.vscode/mcp.json` in your
+   Java project folder:
+
+   ```bash
+   mkdir -p /tmp/hello-java/.vscode
+   cat > /tmp/hello-java/.vscode/mcp.json << EOF
+   {
+     "servers": {
+       "jdtls": {
+         "type": "stdio",
+         "command": "java",
+         "args": [
+           "-Declipse.application=org.eclipse.jdt.ls.mcp.app",
+           "-jar", "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar",
+           "-configuration", "$PRODUCT_DIR/configuration",
+           "-data", "/tmp/hello-java"
+         ]
+       }
+     }
+   }
+   EOF
+   ```
+
+2. **Open the project** in VSCode:
+
+   ```bash
+   code /tmp/hello-java
+   ```
+
+3. **Start the MCP server** — VSCode will prompt you to start MCP servers
+   defined in `.vscode/mcp.json` when you open Copilot Chat.  Click **Start**
+   next to `jdtls`.
+
+4. **Open Copilot Chat** (`Ctrl+Alt+I` / `Cmd+Alt+I`) and try these prompts:
+
+   ```
+   Use the java_hover tool to show me the Javadoc for the greet() method in
+   file:///tmp/hello-java/src/main/java/com/example/Greeter.java at line 15.
+
+   Use java_document_symbols to list all symbols in
+   file:///tmp/hello-java/src/main/java/com/example/Greeter.java
+
+   Use java_workspace_symbols to find all classes named Greeter.
+   ```
+
+---
+
+### Claude Code
+
+> **Requires:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+> CLI installed (`npm install -g @anthropic-ai/claude-code` or follow the
+> official install guide).
+
+1. **Register the MCP server** (run once):
+
+   ```bash
+   claude mcp add jdtls -- java \
+     "-Declipse.application=org.eclipse.jdt.ls.mcp.app" \
+     "-jar" "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar" \
+     "-configuration" "$PRODUCT_DIR/configuration" \
+     "-data" "/tmp/hello-java"
+   ```
+
+   Verify it was registered:
+
+   ```bash
+   claude mcp list
+   ```
+
+2. **Open the project with Claude Code:**
+
+   ```bash
+   cd /tmp/hello-java
+   claude
+   ```
+
+3. **Try these prompts inside the Claude Code REPL:**
+
+   ```
+   Show me the Javadoc for the greet() method in
+   src/main/java/com/example/Greeter.java using the jdtls MCP tools.
+
+   Find all references to the `name` field in Greeter.java.
+
+   List all symbols defined in Greeter.java.
+   ```
+
+   Claude Code will automatically call the `java_hover`, `java_references`, and
+   `java_document_symbols` tools and display the results inline.
+
+4. **Remove the server** when done:
+
+   ```bash
+   claude mcp remove jdtls
+   ```
+
+---
+
+### GitHub Copilot CLI (`gh copilot`)
+
+> **Requires:** [GitHub CLI](https://cli.github.com/) with the Copilot extension.
+> ```bash
+> gh extension install github/gh-copilot
+> gh auth login          # if not already authenticated
+> ```
+
+The GitHub Copilot CLI (`gh copilot suggest` / `gh copilot explain`) uses MCP
+servers configured in the GitHub Copilot for CLI settings file.
+
+1. **Find or create the config file:**
+
+   | OS | Path |
+   |----|------|
+   | Linux / macOS | `~/.config/gh-copilot/config.yaml` (may vary by version) |
+
+   Add the MCP server configuration:
+
+   ```bash
+   mkdir -p ~/.config/gh-copilot
+   cat >> ~/.config/gh-copilot/config.yaml << EOF
+   mcp:
+     servers:
+       jdtls:
+         command: java
+         args:
+           - "-Declipse.application=org.eclipse.jdt.ls.mcp.app"
+           - "-jar"
+           - "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar"
+           - "-configuration"
+           - "$PRODUCT_DIR/configuration"
+           - "-data"
+           - "/tmp/hello-java"
+   EOF
+   ```
+
+2. **Ask Copilot CLI a question about the Java project:**
+
+   ```bash
+   gh copilot suggest "What public methods does the Greeter class have? Use the jdtls MCP tools to check."
+   ```
+
+   Or use `explain` mode:
+
+   ```bash
+   gh copilot explain "Use java_workspace_symbols to find all classes in /tmp/hello-java"
+   ```
+
+> [!NOTE]
+> MCP support in Copilot CLI is evolving. Check
+> [`gh copilot --help`](https://cli.github.com/manual/gh_copilot) or the
+> [GitHub Copilot CLI changelog](https://docs.github.com/en/copilot/github-copilot-in-the-cli/about-github-copilot-in-the-cli)
+> for the latest configuration options.
+
+---
 
 ## Technology stack
 
