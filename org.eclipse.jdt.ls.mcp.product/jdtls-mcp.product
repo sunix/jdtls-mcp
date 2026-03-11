@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?pde version="3.5"?>
+
+<!--
+  Eclipse product definition for jdtls-mcp.
+
+  This product packages:
+  - The complete jdtls runtime (all plugins that were in the original
+    languageServer.product from eclipse-jdtls/eclipse.jdt.ls)
+  - org.eclipse.jdt.ls.mcp — the new MCP bridge plugin
+
+  The product uses org.eclipse.jdt.ls.mcp.app as its application entry
+  point instead of org.eclipse.jdt.ls.core.id1 (the LSP application).
+
+  Build with: mvn package -pl org.eclipse.jdt.ls.mcp.product -am
+-->
+<product
+      name="JDT Language Server MCP"
+      uid="jdtls-mcp.product"
+      id="org.eclipse.jdt.ls.mcp.product"
+      application="org.eclipse.jdt.ls.mcp.app"
+      version="1.0.0"
+      useFeatures="false"
+      includeLaunchers="true"
+      autoIncludeRequirements="true">
+
+   <configIni use="default">
+   </configIni>
+
+   <launcherArgs>
+      <vmArgsMac>-XstartOnFirstThread -Dorg.eclipse.swt.internal.carbon.smallFonts
+      </vmArgsMac>
+   </launcherArgs>
+
+   <launcher>
+      <win useIco="false">
+         <bmp/>
+      </win>
+   </launcher>
+
+   <vm>
+   </vm>
+
+   <!--
+     All plugins from the original jdtls languageServer.product, plus
+     the new org.eclipse.jdt.ls.mcp plugin.
+   -->
+   <plugins>
+      <!-- Eclipse / Equinox runtime -->
+      <plugin id="ch.qos.logback.classic"/>
+      <plugin id="ch.qos.logback.core"/>
+      <plugin id="jakarta.servlet-api"/>
+      <plugin id="org.apache.commons.commons-codec"/>
+      <plugin id="org.apache.felix.scr"/>
+      <plugin id="org.eclipse.ant.core"/>
+      <plugin id="org.eclipse.compare.core"/>
+      <plugin id="org.eclipse.core.commands"/>
+      <plugin id="org.eclipse.core.contenttype"/>
+      <plugin id="org.eclipse.core.expressions"/>
+      <plugin id="org.eclipse.core.filesystem"/>
+      <plugin id="org.eclipse.core.jobs"/>
+      <plugin id="org.eclipse.core.net"/>
+      <plugin id="org.eclipse.core.resources"/>
+      <plugin id="org.eclipse.core.runtime"/>
+      <plugin id="org.eclipse.core.variables"/>
+      <plugin id="org.eclipse.debug.core"/>
+      <plugin id="org.eclipse.equinox.app"/>
+      <plugin id="org.eclipse.equinox.common"/>
+      <plugin id="org.eclipse.equinox.preferences"/>
+      <plugin id="org.eclipse.equinox.registry"/>
+      <plugin id="org.eclipse.equinox.security"/>
+      <plugin id="org.eclipse.equinox.security.linux" fragment="true"/>
+      <plugin id="org.eclipse.equinox.security.macosx" fragment="true"/>
+      <plugin id="org.eclipse.equinox.security.win32" fragment="true"/>
+
+      <!-- JDT -->
+      <plugin id="org.eclipse.jdt.apt.pluggable.core"/>
+      <plugin id="org.eclipse.jdt.core"/>
+      <plugin id="org.eclipse.jdt.core.javac"/>
+      <plugin id="org.eclipse.jdt.launching"/>
+      <plugin id="org.eclipse.jdt.launching.macosx"/>
+
+      <!-- jdtls core bundles -->
+      <plugin id="org.eclipse.jdt.ls.core"/>
+      <plugin id="org.eclipse.jdt.ls.filesystem"/>
+      <plugin id="org.eclipse.jdt.ls.logback.appender" fragment="true"/>
+
+      <!-- Maven / Gradle integration (optional – comment out if not needed) -->
+      <plugin id="org.eclipse.buildship.core"/>
+      <plugin id="org.eclipse.m2e.apt.core"/>
+      <plugin id="org.eclipse.m2e.core"/>
+      <plugin id="org.eclipse.m2e.jdt"/>
+      <plugin id="org.eclipse.m2e.maven.runtime"/>
+      <plugin id="org.eclipse.m2e.workspace.cli"/>
+
+      <!-- OSGi -->
+      <plugin id="org.eclipse.osgi"/>
+      <plugin id="org.eclipse.osgi.compatibility.state" fragment="true"/>
+      <plugin id="org.eclipse.osgi.services"/>
+      <plugin id="org.eclipse.text"/>
+      <plugin id="org.eclipse.xtext.xbase.lib"/>
+      <plugin id="org.jsoup"/>
+
+      <!-- flexmark (Markdown → HTML converter used by jdtls Javadoc renderer) -->
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-html2md-converter"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-ext-emoji"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-ast"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-builder"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-collection"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-data"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-dependency"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-format"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-html"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-misc"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-options"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-sequence"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-util-visitor"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-jira-converter"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-ext-gfm-strikethrough"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-ext-tables"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-ext-wikilink"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-ext-ins"/>
+      <plugin id="wrapped.com.vladsch.flexmark.flexmark-ext-superscript"/>
+      <plugin id="wrapped.org.jetbrains.annotations"/>
+
+      <!-- Java decompiler -->
+      <plugin id="wrapped.com.jetbrains.intellij.java.java-decompiler-engine"/>
+
+      <!-- MCP SDK and langchain4j (wrapped from Maven by Tycho) -->
+      <plugin id="wrapped.io.modelcontextprotocol.sdk.mcp-core"/>
+      <plugin id="wrapped.io.modelcontextprotocol.sdk.mcp-json-jackson2"/>
+      <plugin id="wrapped.dev.langchain4j.langchain4j-core"/>
+      <plugin id="wrapped.io.projectreactor.reactor-core"/>
+      <plugin id="wrapped.org.reactivestreams.reactive-streams"/>
+      <plugin id="wrapped.com.fasterxml.jackson.core.jackson-databind"/>
+      <plugin id="wrapped.com.fasterxml.jackson.core.jackson-core"/>
+      <plugin id="wrapped.com.fasterxml.jackson.core.jackson-annotations"/>
+
+      <!-- *** NEW: the MCP bridge plugin *** -->
+      <plugin id="org.eclipse.jdt.ls.mcp"/>
+   </plugins>
+
+   <configurations>
+      <plugin id="ch.qos.logback.classic"     autoStart="true"  startLevel="2"/>
+      <plugin id="org.apache.aries.spifly.dynamic.bundle" autoStart="true" startLevel="2"/>
+      <plugin id="org.apache.felix.scr"       autoStart="true"  startLevel="2"/>
+      <plugin id="org.eclipse.core.runtime"   autoStart="true"  startLevel="0"/>
+      <plugin id="org.eclipse.equinox.common" autoStart="true"  startLevel="2"/>
+      <plugin id="org.eclipse.jdt.core"       autoStart="false" startLevel="0"/>
+      <plugin id="org.eclipse.jdt.launching"  autoStart="false" startLevel="0"/>
+      <plugin id="org.eclipse.jdt.ls.core"    autoStart="true"  startLevel="0"/>
+      <plugin id="org.eclipse.jdt.ls.mcp"     autoStart="true"  startLevel="0"/>
+   </configurations>
+
+   <preferencesInfo>
+      <targetfile overwrite="false"/>
+   </preferencesInfo>
+
+   <cssInfo>
+   </cssInfo>
+
+</product>

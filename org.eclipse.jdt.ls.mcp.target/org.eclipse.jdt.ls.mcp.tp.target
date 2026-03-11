@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?pde version="3.8"?>
+<!--
+  Target platform for org.eclipse.jdt.ls.mcp.
+
+  This platform:
+  - Pulls the Eclipse runtime and JDT core from the 2025-12 simultaneous release train
+  - Pulls LSP4J from its own update site
+  - Pulls all bundles from jdtls (eclipse.jdt.ls) via its snapshot p2 repository
+  - Pulls the MCP Java SDK and langchain4j from Maven Central, wrapped as OSGi bundles
+-->
+<target name="JDT LS MCP Target Platform" sequenceNumber="1">
+	<locations>
+
+		<!-- ================================================================
+		     Eclipse 2025-12 release train
+		     Provides: org.eclipse.core.runtime, org.eclipse.core.resources,
+		               org.eclipse.jdt.core, org.eclipse.osgi, etc.
+		     ================================================================ -->
+		<location includeAllPlatforms="false" includeConfigurePhase="false"
+		          includeMode="planner" includeSource="true"
+		          type="InstallableUnit">
+			<unit id="org.eclipse.core.runtime" version="0.0.0"/>
+			<unit id="org.eclipse.core.resources" version="0.0.0"/>
+			<unit id="org.eclipse.core.filesystem" version="0.0.0"/>
+			<unit id="org.eclipse.core.net" version="0.0.0"/>
+			<unit id="org.eclipse.core.jobs" version="0.0.0"/>
+			<unit id="org.eclipse.core.expressions" version="0.0.0"/>
+			<unit id="org.eclipse.equinox.app" version="0.0.0"/>
+			<unit id="org.eclipse.equinox.common" version="0.0.0"/>
+			<unit id="org.eclipse.equinox.preferences" version="0.0.0"/>
+			<unit id="org.eclipse.equinox.registry" version="0.0.0"/>
+			<unit id="org.eclipse.jdt.core" version="0.0.0"/>
+			<unit id="org.eclipse.jdt.core.manipulation" version="0.0.0"/>
+			<unit id="org.eclipse.jdt.apt.core" version="0.0.0"/>
+			<unit id="org.eclipse.jdt.launching" version="0.0.0"/>
+			<unit id="org.eclipse.debug.core" version="0.0.0"/>
+			<unit id="org.eclipse.text" version="0.0.0"/>
+			<unit id="org.eclipse.ltk.core.refactoring" version="0.0.0"/>
+			<unit id="org.eclipse.search.core" version="0.0.0"/>
+			<unit id="org.eclipse.xtext.xbase.lib" version="0.0.0"/>
+			<unit id="org.apache.commons.lang3" version="0.0.0"/>
+			<unit id="ch.qos.logback.classic" version="0.0.0"/>
+			<unit id="ch.qos.logback.core" version="0.0.0"/>
+			<repository location="https://download.eclipse.org/releases/2025-12/"/>
+		</location>
+
+		<!-- ================================================================
+		     LSP4J 0.24.0
+		     Provides: org.eclipse.lsp4j, org.eclipse.lsp4j.jsonrpc
+		     ================================================================ -->
+		<location includeAllPlatforms="false" includeConfigurePhase="false"
+		          includeMode="planner" includeSource="true"
+		          type="InstallableUnit">
+			<unit id="org.eclipse.lsp4j" version="0.0.0"/>
+			<unit id="org.eclipse.lsp4j.jsonrpc" version="0.0.0"/>
+			<repository location="https://download.eclipse.org/lsp4j/updates/releases/0.24.0/"/>
+		</location>
+
+		<!-- ================================================================
+		     m2e (Maven integration — required by org.eclipse.jdt.ls.core)
+		     ================================================================ -->
+		<location includeAllPlatforms="false" includeConfigurePhase="false"
+		          includeMode="planner" includeSource="true"
+		          type="InstallableUnit">
+			<unit id="org.eclipse.m2e.core" version="0.0.0"/>
+			<unit id="org.eclipse.m2e.jdt" version="0.0.0"/>
+			<unit id="org.eclipse.m2e.maven.runtime" version="0.0.0"/>
+			<repository location="https://download.eclipse.org/technology/m2e/releases/2.10.0"/>
+		</location>
+
+		<!-- ================================================================
+		     Buildship (Gradle integration — required by org.eclipse.jdt.ls.core)
+		     ================================================================ -->
+		<location includeAllPlatforms="false" includeConfigurePhase="false"
+		          includeMode="planner" includeSource="true"
+		          type="InstallableUnit">
+			<unit id="org.eclipse.buildship.core" version="0.0.0"/>
+			<repository location="https://download.eclipse.org/buildship/updates/latest-snapshot/"/>
+		</location>
+
+		<!-- ================================================================
+		     Eclipse JDT Language Server (jdtls) snapshot builds
+		     Provides: org.eclipse.jdt.ls.core, org.eclipse.jdt.ls.filesystem,
+		               org.eclipse.jdt.ls.logback.appender, and all wrapped
+		               third-party bundles (flexmark, jsoup, etc.)
+		     ================================================================ -->
+		<location includeAllPlatforms="false" includeConfigurePhase="false"
+		          includeMode="planner" includeSource="true"
+		          type="InstallableUnit">
+			<unit id="org.eclipse.jdt.ls.core" version="0.0.0"/>
+			<unit id="org.eclipse.jdt.ls.filesystem" version="0.0.0"/>
+			<unit id="org.eclipse.jdt.ls.logback.appender" version="0.0.0"/>
+			<repository location="https://download.eclipse.org/jdtls/snapshots/"/>
+		</location>
+
+		<!-- ================================================================
+		     MCP Java SDK + langchain4j (from Maven Central).
+		     These are plain Maven jars; Tycho wraps them as OSGi bundles
+		     using missingManifest="generate". All transitive dependencies
+		     (reactor-core, reactive-streams, jackson, slf4j, etc.) are
+		     included transitively via includeDependencyDepth="infinite".
+
+		     The generated OSGi Bundle-SymbolicNames follow Tycho's naming
+		     convention:  wrapped.<groupId>.<artifactId>
+		     ================================================================ -->
+		<location includeDependencyDepth="infinite"
+		          includeDependencyScopes="compile"
+		          includeSource="true"
+		          missingManifest="generate"
+		          label="MCP Java SDK"
+		          type="Maven">
+			<dependencies>
+				<!-- MCP server runtime and protocol core -->
+				<dependency>
+					<groupId>io.modelcontextprotocol.sdk</groupId>
+					<artifactId>mcp-core</artifactId>
+					<version>1.0.0</version>
+					<type>jar</type>
+				</dependency>
+				<!-- Jackson 2 JSON mapper for MCP SDK -->
+				<dependency>
+					<groupId>io.modelcontextprotocol.sdk</groupId>
+					<artifactId>mcp-json-jackson2</artifactId>
+					<version>1.0.0</version>
+					<type>jar</type>
+				</dependency>
+			</dependencies>
+		</location>
+
+		<location includeDependencyDepth="infinite"
+		          includeDependencyScopes="compile"
+		          includeSource="true"
+		          missingManifest="generate"
+		          label="langchain4j"
+		          type="Maven">
+			<dependencies>
+				<!-- @Tool / @P annotations for tool definitions -->
+				<dependency>
+					<groupId>dev.langchain4j</groupId>
+					<artifactId>langchain4j-core</artifactId>
+					<version>1.0.0</version>
+					<type>jar</type>
+				</dependency>
+			</dependencies>
+		</location>
+
+	</locations>
+</target>

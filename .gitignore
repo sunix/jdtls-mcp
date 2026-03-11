@@ -1,9 +1,17 @@
+# Build output
 target/
-.classpath
+
+# Eclipse/IDE project files
 .project
+.classpath
 .settings/
-*.class
-*.jar
-!*-sources.jar
+.metadata/
+.vscode/
 *.iml
 .idea/
+
+# Tycho copies Maven jars into lib/ at build time; never commit them
+*/lib/
+
+# macOS
+.DS_Store
