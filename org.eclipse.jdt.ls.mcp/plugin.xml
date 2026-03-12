@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+
+   <!--
+     Registers a new Eclipse Application that exposes jdtls Java language
+     intelligence as Model Context Protocol (MCP) tools over stdio.
+
+     Start this application instead of the standard jdtls LSP application:
+       -Declipse.application=org.eclipse.jdt.ls.mcp.app
+   -->
+   <extension
+         id="app"
+         point="org.eclipse.core.runtime.applications">
+      <application
+            cardinality="singleton-global"
+            thread="main"
+            visible="true">
+         <run class="org.eclipse.jdt.ls.mcp.McpApplication"/>
+      </application>
+   </extension>
+
+   <extension
+         id="product"
+         point="org.eclipse.core.runtime.products">
+      <product
+            application="org.eclipse.jdt.ls.mcp.app"
+            name="JDT Language Server MCP">
+         <property
+               name="appName"
+               value="JDT Language Server MCP">
+         </property>
+      </product>
+   </extension>
+
+</plugin>
