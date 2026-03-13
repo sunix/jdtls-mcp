@@ -35,6 +35,7 @@ to the Eclipse application via stdio using the MCP protocol.
 
 ```
 jdtls-mcp/
+├── agent.md                             # LLM agent onboarding guide
 ├── pom.xml                              # Tycho parent (mirrors eclipse-jdtls)
 ├── org.eclipse.jdt.ls.mcp.target/      # Target-platform definition
 │   ├── pom.xml
@@ -47,9 +48,10 @@ jdtls-mcp/
 │       ├── McpServerPlugin.java        # BundleActivator
 │       ├── McpApplication.java         # Eclipse IApplication — MCP entry point
 │       └── JdtlsMcpTools.java          # @Tool methods + MCP tool registration
-└── org.eclipse.jdt.ls.mcp.product/    # Eclipse product packaging
-    ├── pom.xml
-    └── jdtls-mcp.product               # All jdtls bundles + org.eclipse.jdt.ls.mcp
+├── org.eclipse.jdt.ls.mcp.product/    # Eclipse product packaging
+│   ├── pom.xml
+│   └── jdtls-mcp.product               # All jdtls bundles + org.eclipse.jdt.ls.mcp
+└── test-workspace/hello-jdtls/        # Sample Maven project for manual testing
 ```
 
 ## How it works
@@ -146,38 +148,12 @@ All position-based tools use **0-based** line and character offsets (LSP convent
 
 ## Testing with MCP clients
 
-The examples below all use this sample Java project as the target workspace.
-Create it once; then point any client at it.
+The repository includes a ready-to-use sample Java project at
+`test-workspace/hello-jdtls/` — use it as the jdtls workspace when trying
+any of the clients below.
 
 ```bash
-mkdir -p /tmp/hello-java/src/main/java/com/example
-cat > /tmp/hello-java/src/main/java/com/example/Greeter.java << 'EOF'
-package com.example;
-
-/**
- * A simple greeter.
- */
-public class Greeter {
-
-    private final String name;
-
-    public Greeter(String name) {
-        this.name = name;
-    }
-
-    /**
-     * Returns a personalised greeting.
-     */
-    public String greet() {
-        return "Hello, " + name + "!";
-    }
-
-    public static void main(String[] args) {
-        Greeter g = new Greeter("World");
-        System.out.println(g.greet());
-    }
-}
-EOF
+export WORKSPACE="$PWD/test-workspace/hello-jdtls"
 ```
 
 The commands in each section refer to `$PRODUCT_DIR` (set above) and assume the
@@ -204,8 +180,8 @@ jdtls-mcp product has been built.
    Java project folder:
 
    ```bash
-   mkdir -p /tmp/hello-java/.vscode
-   cat > /tmp/hello-java/.vscode/mcp.json << EOF
+   mkdir -p "$WORKSPACE/.vscode"
+   cat > "$WORKSPACE/.vscode/mcp.json" << EOF
    {
      "servers": {
        "jdtls": {
@@ -215,7 +191,7 @@ jdtls-mcp product has been built.
            "-Declipse.application=org.eclipse.jdt.ls.mcp.app",
            "-jar", "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar",
            "-configuration", "$PRODUCT_DIR/configuration",
-           "-data", "/tmp/hello-java"
+           "-data", "$WORKSPACE"
          ]
        }
      }
@@ -226,7 +202,7 @@ jdtls-mcp product has been built.
 2. **Open the project** in VSCode:
 
    ```bash
-   code /tmp/hello-java
+   code "$WORKSPACE"
    ```
 
 3. **Start the MCP server** — VSCode will prompt you to start MCP servers
@@ -237,10 +213,10 @@ jdtls-mcp product has been built.
 
    ```
    Use the java_hover tool to show me the Javadoc for the greet() method in
-   file:///tmp/hello-java/src/main/java/com/example/Greeter.java at line 15.
+   file:///path/to/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java at line 34.
 
    Use java_document_symbols to list all symbols in
-   file:///tmp/hello-java/src/main/java/com/example/Greeter.java
+   file:///path/to/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java
 
    Use java_workspace_symbols to find all classes named Greeter.
    ```
@@ -260,7 +236,7 @@ jdtls-mcp product has been built.
      "-Declipse.application=org.eclipse.jdt.ls.mcp.app" \
      "-jar" "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar" \
      "-configuration" "$PRODUCT_DIR/configuration" \
-     "-data" "/tmp/hello-java"
+     "-data" "$WORKSPACE"
    ```
 
    Verify it was registered:
@@ -272,7 +248,7 @@ jdtls-mcp product has been built.
 2. **Open the project with Claude Code:**
 
    ```bash
-   cd /tmp/hello-java
+   cd "$WORKSPACE"
    claude
    ```
 
@@ -331,7 +307,7 @@ servers configured in the GitHub Copilot for CLI settings file.
            - "-configuration"
            - "$PRODUCT_DIR/configuration"
            - "-data"
-           - "/tmp/hello-java"
+           - "$WORKSPACE"
    EOF
    ```
 
@@ -344,7 +320,7 @@ servers configured in the GitHub Copilot for CLI settings file.
    Or use `explain` mode:
 
    ```bash
-   gh copilot explain "Use java_workspace_symbols to find all classes in /tmp/hello-java"
+   gh copilot explain "Use java_workspace_symbols to find all classes in the test-workspace"
    ```
 
 > [!NOTE]
@@ -352,6 +328,102 @@ servers configured in the GitHub Copilot for CLI settings file.
 > [`gh copilot --help`](https://cli.github.com/manual/gh_copilot) or the
 > [GitHub Copilot CLI changelog](https://docs.github.com/en/copilot/github-copilot-in-the-cli/about-github-copilot-in-the-cli)
 > for the latest configuration options.
+
+---
+
+## Contributing
+
+> **TL;DR** — Java 17+, Maven 3.9+, then `mvn package`.
+> All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
+
+### Prerequisites
+
+| Tool  | Version | Notes                           |
+|-------|---------|---------------------------------|
+| Java  | 17+     | Must be on `PATH`               |
+| Maven | 3.9+    | Tycho wraps OSGi builds via Maven |
+
+An internet connection is required on first build to resolve the Eclipse p2
+target platform and Maven Central dependencies.
+
+### IDE setup
+
+**Eclipse IDE** (recommended for OSGi/plugin development):
+
+1. Install [Eclipse IDE for Eclipse Committers](https://www.eclipse.org/downloads/packages/) (2024-12 or later).
+2. Install **Tycho Project Configurators** via *Help → Install New Software* from the Eclipse release update site.
+3. Import the project: *File → Import → Maven → Existing Maven Projects*, select the repo root.
+4. Eclipse will automatically set up the target platform from `org.eclipse.jdt.ls.mcp.tp.target`.
+
+**VS Code / IntelliJ** also work for editing Java source; just run `mvn package`
+from the terminal for builds.
+
+### Build
+
+```bash
+mvn package                       # full build (all platforms)
+mvn package -DskipTests           # skip test execution for faster iteration
+mvn package -pl org.eclipse.jdt.ls.mcp.product -am  # only the plugin + product
+```
+
+### Testing your changes locally
+
+After building, start the server against the included test workspace and exercise
+the MCP tools manually:
+
+```bash
+export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
+# macOS arm64: …/macosx/cocoa/aarch64
+LAUNCHER=$(ls "$PRODUCT_DIR/plugins/" | grep equinox.launcher_ | head -1)
+
+java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
+     -jar "$PRODUCT_DIR/plugins/$LAUNCHER" \
+     -configuration "$PRODUCT_DIR/configuration" \
+     -data "$PWD/test-workspace/hello-jdtls"
+```
+
+The server reads MCP messages from stdin and writes JSON-RPC responses to stdout.
+See [`agent.md`](./agent.md) for a complete self-testing workflow with example
+JSON-RPC messages.
+
+### Adding a new MCP tool
+
+1. Add a method annotated with `@Tool` / `@P` in `JdtlsMcpTools.java`, delegating
+   to the appropriate jdtls handler class (see `org.eclipse.jdt.ls.core.internal.handlers`).
+2. Register it in `JdtlsMcpTools.registerTools()` using the existing
+   `.toolCall(tool(…), this::mcpXxx)` pattern.
+3. Test it against `test-workspace/hello-jdtls/`.
+4. Commit with `feat(tools): add java_<toolname> MCP tool`.
+
+### Commit conventions
+
+This project uses **Conventional Commits**:
+
+```
+<type>(<optional scope>): <short description>
+```
+
+| Type       | When to use                                             |
+|------------|---------------------------------------------------------|
+| `feat`     | New feature or new MCP tool                             |
+| `fix`      | Bug fix                                                 |
+| `refactor` | Code change without behaviour change                    |
+| `test`     | Adding or updating tests                                |
+| `docs`     | Documentation only                                      |
+| `build`    | Build config changes (pom.xml, target platform, …)      |
+| `chore`    | Maintenance (CI, .gitignore, …)                         |
+
+### Key source files
+
+| File | Purpose |
+|------|---------|
+| `org.eclipse.jdt.ls.mcp/…/McpApplication.java` | Eclipse `IApplication` — initialises jdtls workspace, starts MCP stdio server |
+| `org.eclipse.jdt.ls.mcp/…/JdtlsMcpTools.java` | All MCP tool implementations + registration |
+| `org.eclipse.jdt.ls.mcp/…/McpServerPlugin.java` | OSGi `BundleActivator` |
+| `org.eclipse.jdt.ls.mcp/plugin.xml` | Registers `org.eclipse.jdt.ls.mcp.app` Eclipse application |
+| `org.eclipse.jdt.ls.mcp.target/…tp.target` | Target platform: jdtls p2 repo + MCP SDK + langchain4j |
+| `org.eclipse.jdt.ls.mcp.product/jdtls-mcp.product` | Lists all OSGi bundles for the packaged product |
+| `test-workspace/hello-jdtls/` | Sample Maven project for manual testing |
 
 ---
 
