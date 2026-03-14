@@ -12,7 +12,7 @@ import org.eclipse.jdt.ls.core.internal.handlers.NavigateToDefinitionHandler;
 import org.eclipse.jdt.ls.core.internal.handlers.ReferencesHandler;
 import org.eclipse.jdt.ls.core.internal.handlers.WorkspaceSymbolHandler;
 import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager;
-import org.eclipse.jdt.ls.core.internal.preferences.PreferencesManager;
+import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
@@ -29,7 +29,6 @@ import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -50,12 +49,12 @@ import io.modelcontextprotocol.spec.McpSchema;
  */
 public class JdtlsMcpTools {
 
-	private final PreferencesManager preferencesManager;
+	private final PreferenceManager preferencesManager;
 
 	@SuppressWarnings("unused")
 	private final ProjectsManager projectsManager;
 
-	public JdtlsMcpTools(PreferencesManager preferencesManager,
+	public JdtlsMcpTools(PreferenceManager preferencesManager,
 			ProjectsManager projectsManager) {
 		this.preferencesManager = preferencesManager;
 		this.projectsManager = projectsManager;
@@ -82,19 +81,7 @@ public class JdtlsMcpTools {
 		if (result == null || result.getContents() == null) {
 			return "No hover information available.";
 		}
-		MarkupContent markup = result.getContents().getRight();
-		if (markup != null) {
-			return markup.getValue();
-		}
-		var left = result.getContents().getLeft();
-		if (left != null && !left.isEmpty()) {
-			StringBuilder sb = new StringBuilder();
-			for (var ms : left) {
-				sb.append(ms.isLeft() ? ms.getLeft() : ms.getRight().getValue()).append('\n');
-			}
-			return sb.toString().trim();
-		}
-		return "No hover information available.";
+		return String.valueOf(result.getContents());
 	}
 
 	/**
@@ -112,21 +99,14 @@ public class JdtlsMcpTools {
 				new TextDocumentIdentifier(uri),
 				new Position(line, character));
 
-		Either<List<? extends Location>, List<? extends LocationLink>> result =
-				handler.definition(params, new NullProgressMonitor());
+		List<? extends Location> result = handler.definition(params, new NullProgressMonitor());
 
 		if (result == null) {
 			return "No definition found.";
 		}
 		List<String> locations = new java.util.ArrayList<>();
-		if (result.isLeft()) {
-			for (Location loc : result.getLeft()) {
-				locations.add(formatLocation(loc.getUri(), loc.getRange().getStart()));
-			}
-		} else {
-			for (LocationLink link : result.getRight()) {
-				locations.add(formatLocation(link.getTargetUri(), link.getTargetRange().getStart()));
-			}
+		for (Location loc : result) {
+			locations.add(formatLocation(loc.getUri(), loc.getRange().getStart()));
 		}
 		return locations.isEmpty() ? "No definition found." : String.join("\n", locations);
 	}
@@ -169,37 +149,14 @@ public class JdtlsMcpTools {
 			@P("0-based line number") int line,
 			@P("0-based character offset") int character) {
 
-		CompletionHandler handler = new CompletionHandler(preferencesManager, projectsManager);
+		CompletionHandler handler = new CompletionHandler(preferencesManager);
 		CompletionParams params = new CompletionParams(
 				new TextDocumentIdentifier(uri),
 				new Position(line, character));
 
-		Either<List<CompletionItem>, CompletionList> result =
-				handler.completion(params, new NullProgressMonitor());
+		Object result = handler.completion(params, new NullProgressMonitor());
 
-		if (result == null) {
-			return "No completions found.";
-		}
-		List<CompletionItem> items = result.isLeft()
-				? result.getLeft() : result.getRight().getItems();
-		if (items == null || items.isEmpty()) {
-			return "No completions found.";
-		}
-
-		StringBuilder sb = new StringBuilder();
-		int limit = Math.min(items.size(), 20);
-		for (int i = 0; i < limit; i++) {
-			CompletionItem item = items.get(i);
-			sb.append("- ").append(item.getLabel());
-			if (item.getDetail() != null) {
-				sb.append(" : ").append(item.getDetail());
-			}
-			sb.append('\n');
-		}
-		if (items.size() > 20) {
-			sb.append("... and ").append(items.size() - 20).append(" more\n");
-		}
-		return sb.toString().trim();
+		return result == null ? "No completions found." : String.valueOf(result);
 	}
 
 	/**
@@ -214,22 +171,12 @@ public class JdtlsMcpTools {
 		DocumentSymbolParams params = new DocumentSymbolParams(
 				new TextDocumentIdentifier(uri));
 
-		List<Either<SymbolInformation, DocumentSymbol>> result =
-				handler.documentSymbol(params, new NullProgressMonitor());
+		var result = handler.documentSymbol(params, new NullProgressMonitor());
 
 		if (result == null || result.isEmpty()) {
 			return "No symbols found.";
 		}
-		StringBuilder sb = new StringBuilder();
-		for (Either<SymbolInformation, DocumentSymbol> sym : result) {
-			if (sym.isLeft()) {
-				SymbolInformation si = sym.getLeft();
-				sb.append("- [").append(si.getKind()).append("] ").append(si.getName()).append('\n');
-			} else {
-				appendDocumentSymbol(sb, sym.getRight(), 0);
-			}
-		}
-		return sb.toString().trim();
+		return String.valueOf(result);
 	}
 
 	/**
@@ -239,28 +186,15 @@ public class JdtlsMcpTools {
 	public String workspaceSymbols(
 			@P("Search query, e.g. a class name or method name prefix") String query) {
 
-		WorkspaceSymbolHandler handler =
-				new WorkspaceSymbolHandler(preferencesManager);
-
-		Either<List<? extends SymbolInformation>, List<? extends org.eclipse.lsp4j.WorkspaceSymbol>> result =
-				handler.symbol(new WorkspaceSymbolParams(query), new NullProgressMonitor());
+		List<SymbolInformation> result = WorkspaceSymbolHandler.search(query, new NullProgressMonitor());
 
 		if (result == null) {
 			return "No symbols found for: " + query;
 		}
 		List<String> lines = new java.util.ArrayList<>();
-		if (result.isLeft()) {
-			for (SymbolInformation si : result.getLeft()) {
-				lines.add("[" + si.getKind() + "] " + si.getName()
-						+ " — " + si.getLocation().getUri());
-			}
-		} else {
-			for (org.eclipse.lsp4j.WorkspaceSymbol ws : result.getRight()) {
-				String loc = ws.getLocation().isLeft()
-						? ws.getLocation().getLeft().getUri()
-						: ws.getLocation().getRight().getUri();
-				lines.add("[" + ws.getKind() + "] " + ws.getName() + " — " + loc);
-			}
+		for (SymbolInformation si : result) {
+			lines.add("[" + si.getKind() + "] " + si.getName()
+					+ " — " + si.getLocation().getUri());
 		}
 		return lines.isEmpty() ? "No symbols found for: " + query : String.join("\n", lines);
 	}
