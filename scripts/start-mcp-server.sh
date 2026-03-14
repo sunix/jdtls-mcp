@@ -24,8 +24,15 @@ OS="linux" ARCH="x86_64" WS="gtk"
 case "$(uname -s)" in Darwin) OS="macosx"; WS="cocoa" ;; CYGWIN*|MINGW*) OS="win32"; WS="win32" ;; esac
 case "$(uname -m)" in arm64|aarch64) ARCH="aarch64" ;; esac
 
-PROD_ROOT="$REPO_DIR/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product"
-PROD_DIR="$PROD_ROOT/$OS/$WS/$ARCH"
+# Support two layouts:
+#  1. Release archive: plugins/ and configuration/ live directly under REPO_DIR
+#  2. Development build: Tycho output under org.eclipse.jdt.ls.mcp.product/target/...
+if [[ -d "$REPO_DIR/plugins" ]]; then
+  PROD_DIR="$REPO_DIR"
+else
+  PROD_ROOT="$REPO_DIR/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product"
+  PROD_DIR="$PROD_ROOT/$OS/$WS/$ARCH"
+fi
 
 if [[ ! -d "$PROD_DIR" ]]; then
   echo "ERROR: Product directory not found: $PROD_DIR" >&2
@@ -54,6 +61,7 @@ mkdir -p "$DATA_DIR"
 exec java \
   -Declipse.application=org.eclipse.jdt.ls.mcp.app \
   -Dosgi.bundles.defaultStartLevel=4 \
+  -Djdtls.workspace.root="$WORKSPACE" \
   -jar "$LAUNCHER" \
   -configuration "$PROD_DIR/configuration" \
   -data "$DATA_DIR"

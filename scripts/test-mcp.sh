@@ -99,6 +99,7 @@ trap cleanup EXIT
 java \
   -Declipse.application=org.eclipse.jdt.ls.mcp.app \
   -Dosgi.bundles.defaultStartLevel=4 \
+  -Djdtls.workspace.root="$WORKSPACE" \
   -jar "$LAUNCHER" \
   -configuration "$PROD_DIR/configuration" \
   -data "$DATA_DIR" \
