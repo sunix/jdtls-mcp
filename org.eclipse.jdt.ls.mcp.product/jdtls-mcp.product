@@ -19,7 +19,7 @@
       uid="jdtls-mcp.product"
       id="org.eclipse.jdt.ls.mcp.product"
       application="org.eclipse.jdt.ls.mcp.app"
-      version="1.1.0.qualifier"
+      version="1.0.1"
       useFeatures="false"
       includeLaunchers="true"
       autoIncludeRequirements="true">
