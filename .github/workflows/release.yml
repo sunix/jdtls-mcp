@@ -149,6 +149,27 @@ jobs:
 
             ## MCP client configuration
 
+            ### GitHub Copilot Coding Agent (zero-install)
+
+            Paste this into **GitHub Settings → Copilot → Model Context Protocol (MCP)**
+            — no manual download required:
+            ```json
+            {
+              "mcpServers": {
+                "jdtls": {
+                  "type": "stdio",
+                  "command": "bash",
+                  "args": [
+                    "-c",
+                    "f=$(mktemp /tmp/jdtls-mcp-bootstrap-XXXXXX.sh) && curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/download-and-start.sh -o \"$f\" && chmod +x \"$f\" && exec \"$f\""
+                  ]
+                }
+              }
+            }
+            ```
+
+            ### VS Code / other local clients
+
             Add to your MCP client config (e.g. `.vscode/mcp.json`):
             ```json
             {
