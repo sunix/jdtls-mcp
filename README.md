@@ -79,7 +79,7 @@ jdtls-mcp/
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Java | 17+    | Must be on `PATH` |
+| Java | 21+    | Must be on `PATH` |
 | Maven | 3.9+ | For building |
 
 ## Building
@@ -368,23 +368,235 @@ mvn package -pl org.eclipse.jdt.ls.mcp.product -am  # only the plugin + product
 
 ### Testing your changes locally
 
-After building, start the server against the included test workspace and exercise
-the MCP tools manually:
+Two helper scripts are provided in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/start-mcp-server.sh`](./scripts/start-mcp-server.sh) | Start the server against any workspace — reads MCP from stdin, writes responses to stdout |
+| [`scripts/test-mcp.sh`](./scripts/test-mcp.sh) | Smoke-test all tools against `test-workspace/hello-jdtls` |
+
+**Smoke-test all tools at once:**
 
 ```bash
-export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
-# macOS arm64: …/macosx/cocoa/aarch64
-LAUNCHER=$(ls "$PRODUCT_DIR/plugins/" | grep equinox.launcher_ | head -1)
-
-java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
-     -jar "$PRODUCT_DIR/plugins/$LAUNCHER" \
-     -configuration "$PRODUCT_DIR/configuration" \
-     -data "$PWD/test-workspace/hello-jdtls"
+# Run from the repo root after 'mvn package -DskipTests'
+./scripts/test-mcp.sh
 ```
 
-The server reads MCP messages from stdin and writes JSON-RPC responses to stdout.
+The script starts the server, sends the MCP handshake followed by one call for
+every tool, and prints the raw JSON-RPC responses to stdout.  Startup takes
+around 60 s on first run while Maven imports the project and the JDT index
+warms up.
+
+**Start the server manually against any workspace:**
+
+```bash
+# Against the bundled test project
+./scripts/start-mcp-server.sh
+
+# Against your own project (workspace dir, optional data/metadata dir)
+./scripts/start-mcp-server.sh /path/to/my-java-project /tmp/jdtls-data
+```
+
+The server then reads MCP messages from stdin and writes responses to stdout.
 See [`agent.md`](./agent.md) for a complete self-testing workflow with example
 JSON-RPC messages.
+
+#### Wire-protocol quick test (no MCP client required)
+
+The `StdioServerTransportProvider` from the MCP Java SDK uses
+**newline-delimited JSON** (NDJSON) — one JSON object per line — **not**
+the `Content-Length` framing used by LSP.  You can therefore drive the server
+entirely with shell here-docs or a file of JSON lines, or use the
+`scripts/test-mcp.sh` script which handles this automatically.
+
+Write MCP messages — one per line — and pipe them in:
+
+```bash
+cat > /tmp/mcp-input.txt << 'EOF'
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+EOF
+
+./scripts/start-mcp-server.sh 2>/dev/null < /tmp/mcp-input.txt
+```
+
+> [!TIP]
+> The server maps the workspace Maven project on first start; this takes
+> roughly 60 s.  Send the messages immediately — the `initialize` reply arrives as
+> soon as the transport is ready, and tool responses follow once project import
+> and JDT indexing finishes.
+
+#### Example session — annotated server output
+
+Below is a real session against `test-workspace/hello-jdtls/`.
+
+**Input** (`/tmp/mcp-input.txt`) — three NDJSON lines:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+```
+
+**Response line 1 — `initialize` reply:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {
+      "logging": {},
+      "tools": { "listChanged": true }
+    },
+    "serverInfo": { "name": "jdtls-mcp", "version": "1.0.0" }
+  }
+}
+```
+
+**Response line 2 — `tools/list` reply** (formatted for readability):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "java_hover",
+        "description": "Get hover information (Javadoc, type info) for the Java symbol at a given position.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri":       { "type": "string",  "description": "Absolute file URI, e.g. file:///path/to/MyClass.java" },
+            "line":      { "type": "integer", "description": "0-based line number" },
+            "character": { "type": "integer", "description": "0-based character offset" }
+          },
+          "required": ["uri", "line", "character"]
+        }
+      },
+      {
+        "name": "java_definition",
+        "description": "Find the definition of the Java symbol (class, method, field) at the given position.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri":       { "type": "string",  "description": "Absolute file URI, e.g. file:///path/to/MyClass.java" },
+            "line":      { "type": "integer", "description": "0-based line number" },
+            "character": { "type": "integer", "description": "0-based character offset" }
+          },
+          "required": ["uri", "line", "character"]
+        }
+      },
+      {
+        "name": "java_references",
+        "description": "Find all references to the Java symbol at the given position.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri":                { "type": "string",  "description": "Absolute file URI, e.g. file:///path/to/MyClass.java" },
+            "line":               { "type": "integer", "description": "0-based line number" },
+            "character":          { "type": "integer", "description": "0-based character offset" },
+            "includeDeclaration": { "type": "boolean", "description": "Whether to include the declaration itself" }
+          },
+          "required": ["uri", "line", "character", "includeDeclaration"]
+        }
+      },
+      {
+        "name": "java_completion",
+        "description": "Get code completion suggestions at the given position in a Java source file.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri":       { "type": "string",  "description": "Absolute file URI, e.g. file:///path/to/MyClass.java" },
+            "line":      { "type": "integer", "description": "0-based line number" },
+            "character": { "type": "integer", "description": "0-based character offset" }
+          },
+          "required": ["uri", "line", "character"]
+        }
+      },
+      {
+        "name": "java_document_symbols",
+        "description": "List all symbols (classes, methods, fields) defined in a Java source file.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": { "type": "string", "description": "Absolute file URI, e.g. file:///path/to/MyClass.java" }
+          },
+          "required": ["uri"]
+        }
+      },
+      {
+        "name": "java_workspace_symbols",
+        "description": "Search for Java symbols (classes, methods, fields) by name across the workspace.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "Search query, e.g. a class name or method name prefix" }
+          },
+          "required": ["query"]
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Example tool calls
+
+**`java_workspace_symbols`** — find all classes named `Greeter`:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"java_workspace_symbols","arguments":{"query":"Greeter"}}}
+```
+
+**`java_document_symbols`** — list all symbols in a file:
+
+```json
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"java_document_symbols","arguments":{"uri":"file:///root/github/sunix/jdtls-mcp/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java"}}}
+```
+
+**`java_hover`** — get Javadoc at a specific position:
+
+```json
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"java_hover","arguments":{"uri":"file:///root/github/sunix/jdtls-mcp/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java","line":10,"character":18}}}
+```
+
+**`java_definition`** — jump to the definition of a symbol:
+
+```json
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"java_definition","arguments":{"uri":"file:///root/github/sunix/jdtls-mcp/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java","line":10,"character":18}}}
+```
+
+**`java_references`** — find all usages of a symbol:
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"java_references","arguments":{"uri":"file:///root/github/sunix/jdtls-mcp/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java","line":5,"character":13,"includeDeclaration":true}}}
+```
+
+#### Example chat prompts for LLM agents
+
+These prompts work well with GitHub Copilot, Claude Code, or any MCP-aware
+LLM when the `jdtls` server is connected:
+
+```
+List all the methods and fields defined in
+file:///…/test-workspace/hello-jdtls/src/main/java/com/example/Greeter.java
+using the java_document_symbols tool.
+
+Show me the Javadoc for the greet() method in Greeter.java using java_hover.
+
+Find all classes in the workspace that contain the word "Counter" using
+java_workspace_symbols.
+
+Find every place in the codebase where the `name` field of Greeter is
+referenced, using java_references.
+
+Jump to the definition of the Counter class from the call site in Greeter.java
+using java_definition.
+```
 
 ### Adding a new MCP tool
 
