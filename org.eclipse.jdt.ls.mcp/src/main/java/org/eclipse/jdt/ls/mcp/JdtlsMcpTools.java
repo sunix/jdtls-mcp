@@ -4,6 +4,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.ls.core.internal.handlers.CompletionHandler;
 import org.eclipse.jdt.ls.core.internal.handlers.DocumentSymbolHandler;
@@ -199,6 +204,56 @@ public class JdtlsMcpTools {
 		return lines.isEmpty() ? "No symbols found for: " + query : String.join("\n", lines);
 	}
 
+	/**
+	 * Returns compilation errors and warnings for a Java source file, or for
+	 * the entire workspace when no URI is supplied.
+	 */
+	@Tool("Get compilation errors and warnings for a Java source file or the entire workspace.")
+	public String diagnostics(
+			@P("Absolute file URI (e.g. file:///path/to/MyClass.java). Omit or leave empty to get diagnostics for the entire workspace.") String uri) {
+
+		try {
+			IMarker[] markers;
+			IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
+
+			if (uri != null && !uri.isBlank()) {
+				IFile[] files = root.findFilesForLocationURI(new java.net.URI(uri));
+				if (files.length == 0) {
+					return "File not found in workspace: " + uri;
+				}
+				markers = files[0].findMarkers(
+						"org.eclipse.jdt.core.problem", true, IResource.DEPTH_ZERO);
+			} else {
+				markers = root.findMarkers(
+						"org.eclipse.jdt.core.problem", true, IResource.DEPTH_INFINITE);
+			}
+
+			if (markers == null || markers.length == 0) {
+				return uri != null && !uri.isBlank()
+						? "No diagnostics found for: " + uri
+						: "No diagnostics found in workspace.";
+			}
+
+			StringBuilder sb = new StringBuilder();
+			for (IMarker marker : markers) {
+				int severity = marker.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO);
+				String severityStr = severity == IMarker.SEVERITY_ERROR ? "ERROR"
+						: severity == IMarker.SEVERITY_WARNING ? "WARNING" : "INFO";
+				String message = marker.getAttribute(IMarker.MESSAGE, "");
+				int line = marker.getAttribute(IMarker.LINE_NUMBER, -1);
+				java.net.URI resUri = marker.getResource().getLocationURI();
+				String location = resUri != null ? resUri.toString()
+						: marker.getResource().getFullPath().toString();
+				sb.append(severityStr).append(' ')
+				  .append(location).append(':').append(line)
+				  .append(' ').append(message).append('\n');
+			}
+			return sb.toString().trim();
+		} catch (Exception e) {
+			return "Error getting diagnostics: " + e.getMessage();
+		}
+	}
+
 	// ---- MCP server registration ----
 
 	/**
@@ -257,7 +312,15 @@ public class JdtlsMcpTools {
 					Map.of(
 						"query", prop("string", "Search query, e.g. a class name or method name prefix")),
 					List.of("query")),
-				this::mcpWorkspaceSymbols);
+				this::mcpWorkspaceSymbols)
+
+			.toolCall(tool("java_diagnostics",
+					"Get compilation errors and warnings for a Java source file or the entire workspace.",
+					Map.of(
+						"uri", prop("string",
+							"Absolute file URI (e.g. file:///path/to/MyClass.java). Omit for workspace-wide diagnostics.")),
+					List.of()),
+				this::mcpDiagnostics);
 	}
 
 	// ---- MCP handler adapters ----
@@ -294,6 +357,13 @@ public class JdtlsMcpTools {
 	private McpSchema.CallToolResult mcpWorkspaceSymbols(McpSyncServerExchange ex,
 			McpSchema.CallToolRequest req) {
 		return text(workspaceSymbols(str(req.arguments(), "query")));
+	}
+
+	private McpSchema.CallToolResult mcpDiagnostics(McpSyncServerExchange ex,
+			McpSchema.CallToolRequest req) {
+		Map<String, Object> arguments = req.arguments();
+		Object uriValue = arguments != null ? arguments.get("uri") : null;
+		return text(diagnostics(uriValue != null ? uriValue.toString() : ""));
 	}
 
 	// ---- Schema helpers ----
