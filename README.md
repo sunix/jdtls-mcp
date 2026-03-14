@@ -154,6 +154,7 @@ from stdin and writes JSON-RPC responses to stdout.
 | `java_completion` | Get code completion suggestions |
 | `java_document_symbols` | List all symbols in a file |
 | `java_workspace_symbols` | Search for symbols across the workspace |
+| `java_diagnostics` | Get compilation errors and warnings for a file or workspace |
 
 All position-based tools use **0-based** line and character offsets (LSP convention).
 
@@ -738,7 +739,7 @@ MCP — but with a fundamentally different architecture.
 | Workspace | Fixed at server startup (CLI argument) | Changed at runtime via `initializeWorkspace()` tool |
 | Java required | Java 21 | Java 25 |
 | Framework | Tycho / OSGi | [Quarkus](https://quarkus.io/) + [quarkus-mcp-server](https://docs.quarkiverse.io/quarkus-mcp-server/dev/) |
-| LSP tools | hover, document symbols, references, workspace symbols, definition | document symbols, completions, diagnostics, format, definition |
+| LSP tools | hover, document symbols, references, workspace symbols, definition, **diagnostics** | document symbols, completions, diagnostics, format, definition |
 | Lifecycle tools | None (transparent to the LLM) | `startJdtls`, `stopJdtls`, `checkJdtls`, `installJdtls`, `initializeWorkspace` |
 
 **When to use which:**
@@ -757,12 +758,11 @@ Looking at what `java-lsp-mcp-server` has that this project currently lacks:
 
 | Missing tool | LSP request | What it enables |
 |---|---|---|
-| `java_diagnostics` | `textDocument/publishDiagnostics` (notification) | Surface compilation errors / warnings to the agent without opening an IDE |
 | `java_completions` | `textDocument/completion` | Let the agent request completions at a position — useful for code generation workflows |
 | `java_format` | `textDocument/formatting` + `textDocument/didChange` | Normalise generated code before committing |
 
-All three are available through the jdtls handlers already on the classpath
-(`DocumentLifeCycleHandler`, `CompletionHandler`, `FormattingHandler`), so
+Both are available through the jdtls handlers already on the classpath
+(`CompletionHandler`, `FormattingHandler`), so
 they can be added to `JdtlsMcpTools.java` following the same pattern as the
 existing tools.
 

@@ -83,6 +83,12 @@ mkfifo "$FIFO"
   # java_references — all references to the 'name' field declared at line 17:25
   printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"java_references\",\"arguments\":{\"uri\":\"$GREETER\",\"line\":17,\"character\":25,\"includeDeclaration\":true}}}"
 
+  # java_diagnostics — check for compilation errors in Greeter.java
+  printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"java_diagnostics\",\"arguments\":{\"uri\":\"$GREETER\"}}}"
+
+  # java_diagnostics — check for compilation errors across the whole workspace
+  printf '%s\n' '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"java_diagnostics","arguments":{}}}'
+
   # Keep stdin open until server exits or timeout
   sleep 300
 } > "$FIFO" &
