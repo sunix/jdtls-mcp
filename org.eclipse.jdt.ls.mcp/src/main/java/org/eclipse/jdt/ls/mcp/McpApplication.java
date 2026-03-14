@@ -2,18 +2,27 @@ package org.eclipse.jdt.ls.mcp;
 
 import java.util.concurrent.CountDownLatch;
 
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.Path;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
+import org.eclipse.jdt.ls.core.internal.JobHelpers;
 import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager;
-import org.eclipse.jdt.ls.core.internal.preferences.PreferencesManager;
+import org.eclipse.jdt.ls.core.internal.preferences.PreferenceManager;
+import org.eclipse.lsp4j.ClientCapabilities;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
 
-import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.json.McpJsonDefaults;
+import io.modelcontextprotocol.json.McpJsonMapperSupplier;
+import io.modelcontextprotocol.json.schema.JsonSchemaValidatorSupplier;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
@@ -64,7 +73,7 @@ public class McpApplication implements IApplication {
 		//     this point; its singleton is available immediately.
 		// ---------------------------------------------------------------
 		JavaLanguageServerPlugin jdtlsPlugin = JavaLanguageServerPlugin.getInstance();
-		PreferencesManager preferencesManager = jdtlsPlugin.getPreferencesManager();
+		PreferenceManager preferencesManager = jdtlsPlugin.getPreferencesManager();
 		ProjectsManager projectsManager = jdtlsPlugin.getProjectsManager();
 
 		// ---------------------------------------------------------------
@@ -73,21 +82,100 @@ public class McpApplication implements IApplication {
 		//     an "initialize" request.  We use the workspace that was
 		//     passed to Equinox via the standard -data argument.
 		// ---------------------------------------------------------------
-		String workspaceRoot = org.eclipse.core.runtime.Platform
-				.getLocation().toOSString();
+		// Seed ClientPreferences so ProjectsManager.initializeProjects() does not NPE.
+		// Normally this is done during the LSP "initialize" handshake; we do it
+		// manually here because MCP starts without an LSP client connection.
+		preferencesManager.updateClientPrefences(
+				new ClientCapabilities(), java.util.Collections.emptyMap());
+
+		IPath workspaceRoot = Path.fromOSString(
+				org.eclipse.core.runtime.Platform.getLocation().toOSString());
 		projectsManager.initializeProjects(
 				java.util.Collections.singletonList(workspaceRoot), monitor);
+
+		// Wait for m2e's ProjectRegistryRefreshJob to finish configuring the
+		// Maven project (adds org.eclipse.jdt.core.javanature, classpath, etc.)
+		// before we trigger a build.  Without this the workspace build runs on
+		// an incompletely-configured project and the JDT type-name index stays
+		// empty, causing java_workspace_symbols to return no results.
+		JobHelpers.waitForProjectRegistryRefreshJob();
+
+		// Now do a full workspace build so Eclipse compiles the sources and
+		// populates the per-project output folders.
+		IWorkspace workspace = ResourcesPlugin.getWorkspace();
+		workspace.build(IncrementalProjectBuilder.FULL_BUILD, monitor);
+
+		// Finally, wait for the JDT search index (type-name index) to be fully
+		// populated.  This ensures java_workspace_symbols works on the first call.
+		JobHelpers.waitUntilIndexesReady();
 
 		// ---------------------------------------------------------------
 		// 3.  Build MCP server with all Java language tools
 		// ---------------------------------------------------------------
 		JdtlsMcpTools tools = new JdtlsMcpTools(preferencesManager, projectsManager);
 
-		ObjectMapper objectMapper = new ObjectMapper()
-				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-		JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(objectMapper);
+		// Obtain the McpJsonMapper. McpJsonDefaults.getMapper() uses ServiceLoader
+		// which does not work across OSGi bundles. We work around this by:
+		// 1. Finding and fully starting the mcp-json-jackson2 bundle.
+		// 2. Loading JacksonMcpJsonMapperSupplier from that bundle's classloader.
+		// 3. Injecting it into McpJsonDefaults' static service loader via reflection.
+		BundleContext ctx = McpServerPlugin.getInstance().getBundleContext();
 
-		StdioServerTransportProvider transport = new StdioServerTransportProvider(jsonMapper);
+		Bundle mcpJsonBundle = null;
+		for (Bundle b : ctx.getBundles()) {
+			if ("io.modelcontextprotocol.sdk.mcp-json-jackson2".equals(b.getSymbolicName())) {
+				mcpJsonBundle = b;
+				break;
+			}
+		}
+		if (mcpJsonBundle == null) {
+			throw new IllegalStateException(
+					"io.modelcontextprotocol.sdk.mcp-json-jackson2 bundle not found");
+		}
+		// Force the bundle to ACTIVE state (bypasses lazy-activation policy).
+		if (mcpJsonBundle.getState() != Bundle.ACTIVE) {
+			// Loading a class from the bundle forces it from STARTING to ACTIVE state
+			// (which is how lazy activation works) without requiring start() which can
+			// cause deadlocks when called from an application thread.
+			mcpJsonBundle.loadClass(
+					"io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapperSupplier");
+		}
+
+		// Instantiate JacksonMcpJsonMapperSupplier via the bundle's own classloader.
+		// The implementation class is in a non-exported package, so we must use
+		// the bundle's classloader directly rather than a normal import.
+		Class<?> supplierClass = mcpJsonBundle.loadClass(
+				"io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapperSupplier");
+		McpJsonMapperSupplier mapperSupplier = (McpJsonMapperSupplier) supplierClass
+				.getDeclaredConstructor().newInstance();
+
+		// Inject into McpJsonDefaults static service loader via reflection
+		// so that McpJsonDefaults.getMapper() (and McpJsonDefaults.getSchemaValidator()
+		// used internally by McpServer.build()) work correctly in OSGi.
+		{
+			java.lang.reflect.Constructor<McpJsonDefaults> ctor =
+					McpJsonDefaults.class.getDeclaredConstructor();
+			ctor.setAccessible(true);
+			McpJsonDefaults dummy = ctor.newInstance();
+
+			java.lang.reflect.Method mapperSetter = McpJsonDefaults.class
+					.getDeclaredMethod("setMcpJsonMapperSupplier", McpJsonMapperSupplier.class);
+			mapperSetter.setAccessible(true);
+			mapperSetter.invoke(dummy, mapperSupplier);
+
+			// Also inject the schema validator supplier.
+			Class<?> validatorSupplierClass = mcpJsonBundle.loadClass(
+					"io.modelcontextprotocol.json.schema.jackson2.JacksonJsonSchemaValidatorSupplier");
+			JsonSchemaValidatorSupplier validatorSupplier = (JsonSchemaValidatorSupplier)
+					validatorSupplierClass.getDeclaredConstructor().newInstance();
+			java.lang.reflect.Method validatorSetter = McpJsonDefaults.class
+					.getDeclaredMethod("setJsonSchemaValidatorSupplier", JsonSchemaValidatorSupplier.class);
+			validatorSetter.setAccessible(true);
+			validatorSetter.invoke(dummy, validatorSupplier);
+		}
+		// McpJsonDefaults.getMapper() and getSchemaValidator() now work.
+
+		StdioServerTransportProvider transport = new StdioServerTransportProvider(McpJsonDefaults.getMapper());
 
 		var spec = McpServer.sync(transport)
 				.serverInfo(SERVER_NAME, SERVER_VERSION);
