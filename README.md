@@ -80,18 +80,40 @@ jdtls-mcp/
 | Tool | Version | Notes |
 |------|---------|-------|
 | Java | 21+    | Must be on `PATH` |
-| Maven | 3.9+ | For building |
 
-## Building
+## Installation
+
+### Option A — Download a release (recommended)
+
+Download the archive for your platform from the
+[**Releases page**](https://github.com/sunix/jdtls-mcp/releases/latest),
+extract it, and you're ready to go — no build step required.
+
+```bash
+# Linux x86_64
+curl -L https://github.com/sunix/jdtls-mcp/releases/latest/download/jdtls-mcp-linux-x86_64.tar.gz \
+  | tar xz
+cd jdtls-mcp
+
+# macOS arm64 (Apple Silicon)
+curl -L https://github.com/sunix/jdtls-mcp/releases/latest/download/jdtls-mcp-macos-aarch64.tar.gz \
+  | tar xz
+cd jdtls-mcp
+```
+
+The extracted directory contains `plugins/`, `configuration/`, and `scripts/`.
+
+### Option B — Build from source
+
+Requires **Maven 3.9+** in addition to Java 21.
 
 ```bash
 git clone https://github.com/sunix/jdtls-mcp.git
 cd jdtls-mcp
-mvn package
+mvn package -DskipTests
 ```
 
 The built product lands at:
-
 ```
 org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/
 ├── linux/gtk/x86_64/
@@ -101,35 +123,26 @@ org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/
 └── win32/win32/x86_64/
 ```
 
-Each platform folder contains:
+## Running
 
-```
-plugins/
-  org.eclipse.equinox.launcher_<version>.jar
-configuration/
-  config.ini
-```
-
-> [!TIP]
-> Set `PRODUCT_DIR` to your platform's folder to simplify the commands below.
->
-> **Linux x86_64**
-> ```bash
-> export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
-> ```
-> **macOS arm64 (Apple Silicon)**
-> ```bash
-> export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/macosx/cocoa/aarch64"
-> ```
-
-## Running manually
+Use the bundled `scripts/start-mcp-server.sh` (included in release archives
+and in the repo):
 
 ```bash
-java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
-     -jar "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar" \
-     -configuration "$PRODUCT_DIR/configuration" \
-     -data /path/to/your-java-workspace
+# Point at your Java workspace
+./scripts/start-mcp-server.sh /path/to/your-java-project
+
+# Optional second argument: Eclipse metadata/index directory
+./scripts/start-mcp-server.sh /path/to/your-java-project /tmp/jdtls-data
 ```
+
+The script auto-detects OS and CPU architecture.  The server reads MCP messages
+from stdin and writes JSON-RPC responses to stdout.
+
+> [!NOTE]
+> Startup takes **~60 s** on the first run while Maven imports the project and
+> the JDT type-name index warms up.  Subsequent starts against the same data
+> directory are faster.
 
 ## Available MCP tools
 
@@ -156,18 +169,17 @@ any of the clients below.
 export WORKSPACE="$PWD/test-workspace/hello-jdtls"
 ```
 
-The commands in each section refer to `$PRODUCT_DIR` (set above) and assume the
-jdtls-mcp product has been built.
+The examples below assume you have either downloaded a release archive and
+extracted it to `~/jdtls-mcp/`, or cloned and built the repo.  Adjust
+`JDTLS_MCP_DIR` to wherever `scripts/start-mcp-server.sh` lives:
 
-> [!IMPORTANT]
-> The `org.eclipse.equinox.launcher_*.jar` glob must be replaced with the
-> actual jar filename in your build output, for example:
-> ```bash
-> # Find the exact name after building:
-> ls "$PRODUCT_DIR/plugins/" | grep equinox.launcher
-> # → org.eclipse.equinox.launcher_1.6.900.v20240613-2009.jar
-> ```
-> In all configuration files below, replace the glob with that exact filename.
+```bash
+# Downloaded release (example)
+export JDTLS_MCP_DIR="$HOME/jdtls-mcp"
+
+# Built from source
+export JDTLS_MCP_DIR="$PWD"   # repo root
+```
 
 ---
 
@@ -186,13 +198,8 @@ jdtls-mcp product has been built.
      "servers": {
        "jdtls": {
          "type": "stdio",
-         "command": "java",
-         "args": [
-           "-Declipse.application=org.eclipse.jdt.ls.mcp.app",
-           "-jar", "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar",
-           "-configuration", "$PRODUCT_DIR/configuration",
-           "-data", "$WORKSPACE"
-         ]
+         "command": "$JDTLS_MCP_DIR/scripts/start-mcp-server.sh",
+         "args": ["$WORKSPACE"]
        }
      }
    }
@@ -232,11 +239,7 @@ jdtls-mcp product has been built.
 1. **Register the MCP server** (run once):
 
    ```bash
-   claude mcp add jdtls -- java \
-     "-Declipse.application=org.eclipse.jdt.ls.mcp.app" \
-     "-jar" "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar" \
-     "-configuration" "$PRODUCT_DIR/configuration" \
-     "-data" "$WORKSPACE"
+   claude mcp add jdtls -- "$JDTLS_MCP_DIR/scripts/start-mcp-server.sh" "$WORKSPACE"
    ```
 
    Verify it was registered:
@@ -299,14 +302,8 @@ servers configured in the GitHub Copilot for CLI settings file.
    mcp:
      servers:
        jdtls:
-         command: java
+         command: "$JDTLS_MCP_DIR/scripts/start-mcp-server.sh"
          args:
-           - "-Declipse.application=org.eclipse.jdt.ls.mcp.app"
-           - "-jar"
-           - "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_<version>.jar"
-           - "-configuration"
-           - "$PRODUCT_DIR/configuration"
-           - "-data"
            - "$WORKSPACE"
    EOF
    ```
@@ -333,14 +330,14 @@ servers configured in the GitHub Copilot for CLI settings file.
 
 ## Contributing
 
-> **TL;DR** — Java 17+, Maven 3.9+, then `mvn package`.
+> **TL;DR** — Java 21, Maven 3.9+, then `mvn package -DskipTests`.
 > All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### Prerequisites
 
 | Tool  | Version | Notes                           |
 |-------|---------|---------------------------------|
-| Java  | 17+     | Must be on `PATH`               |
+| Java  | 21+     | Must be on `PATH`               |
 | Maven | 3.9+    | Tycho wraps OSGi builds via Maven |
 
 An internet connection is required on first build to resolve the Eclipse p2

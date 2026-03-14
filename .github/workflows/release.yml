@@ -1,0 +1,112 @@
+name: Release
+
+# Trigger on a version tag push (e.g., git tag v1.0.0 && git push --tags).
+# The tag name becomes the GitHub Release title and the version embedded in
+# the archive filenames.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to create a GitHub Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build with Maven / Tycho
+        run: mvn --batch-mode package -DskipTests
+
+      # -----------------------------------------------------------------------
+      # Package each platform product directory into a named archive.
+      # The archive root is always named "jdtls-mcp/" so users extract into a
+      # predictable directory regardless of the platform ZIP layout.
+      # -----------------------------------------------------------------------
+      - name: Package platform archives
+        run: |
+          PROD="org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product"
+          TAG="${GITHUB_REF_NAME}"          # e.g. v1.0.0
+
+          # Helper: pack a product directory + scripts/ into a tar.gz.
+          # The archive root is always "jdtls-mcp/" for a predictable extract path.
+          pkg_tar() {
+            local src="$1" out="$2"
+            mkdir -p _pkg/jdtls-mcp
+            cp -r "$src"/. _pkg/jdtls-mcp/
+            cp -r scripts   _pkg/jdtls-mcp/scripts
+            tar -czf "$out" -C _pkg jdtls-mcp
+            rm -rf _pkg
+          }
+
+          pkg_tar "$PROD/linux/gtk/x86_64"     "jdtls-mcp-${TAG}-linux-x86_64.tar.gz"
+          pkg_tar "$PROD/linux/gtk/aarch64"    "jdtls-mcp-${TAG}-linux-aarch64.tar.gz"
+          pkg_tar "$PROD/macosx/cocoa/x86_64"  "jdtls-mcp-${TAG}-macos-x86_64.tar.gz"
+          pkg_tar "$PROD/macosx/cocoa/aarch64" "jdtls-mcp-${TAG}-macos-aarch64.tar.gz"
+
+          # Windows: use zip
+          mkdir -p _pkg/jdtls-mcp
+          cp -r "$PROD/win32/win32/x86_64"/. _pkg/jdtls-mcp/
+          cp -r scripts _pkg/jdtls-mcp/scripts
+          (cd _pkg && zip -qr "$OLDPWD/jdtls-mcp-${TAG}-windows-x86_64.zip" jdtls-mcp)
+          rm -rf _pkg
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "jdtls-mcp ${{ github.ref_name }}"
+          body: |
+            ## Installation
+
+            Download the archive for your platform, extract it, and run the server:
+
+            **Linux / macOS**
+            ```bash
+            tar xzf jdtls-mcp-${{ github.ref_name }}-linux-x86_64.tar.gz
+            cd jdtls-mcp
+            # start against your Java workspace
+            ./scripts/start-mcp-server.sh /path/to/your-java-project
+            ```
+
+            **Windows**
+            ```
+            Expand-Archive jdtls-mcp-${{ github.ref_name }}-windows-x86_64.zip
+            cd jdtls-mcp
+            java -Declipse.application=org.eclipse.jdt.ls.mcp.app -Dosgi.bundles.defaultStartLevel=4 -jar plugins\org.eclipse.equinox.launcher_*.jar -configuration configuration -data C:\path\to\your-java-project
+            ```
+
+            ## MCP client configuration
+
+            Add to your MCP client config (e.g. `.vscode/mcp.json`):
+            ```json
+            {
+              "servers": {
+                "jdtls": {
+                  "type": "stdio",
+                  "command": "/path/to/jdtls-mcp/scripts/start-mcp-server.sh",
+                  "args": ["/path/to/your-java-project"]
+                }
+              }
+            }
+            ```
+
+            Startup takes ~60 s on first run while Maven imports the project and
+            the JDT index warms up.
+          files: |
+            jdtls-mcp-${{ github.ref_name }}-linux-x86_64.tar.gz
+            jdtls-mcp-${{ github.ref_name }}-linux-aarch64.tar.gz
+            jdtls-mcp-${{ github.ref_name }}-macos-x86_64.tar.gz
+            jdtls-mcp-${{ github.ref_name }}-macos-aarch64.tar.gz
+            jdtls-mcp-${{ github.ref_name }}-windows-x86_64.zip
