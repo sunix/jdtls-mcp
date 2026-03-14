@@ -159,6 +159,60 @@ All position-based tools use **0-based** line and character offsets (LSP convent
 
 ---
 
+## GitHub Copilot Coding Agent (zero-install configuration)
+
+You can enable `jdtls-mcp` for any Java repository on GitHub by pasting a
+single JSON snippet into your **GitHub Copilot settings** → **Model Context
+Protocol (MCP)**.  No manual download or installation is required — the
+configuration uses a bootstrap script that auto-downloads the correct release
+binary for the agent's platform and caches it for subsequent runs.
+
+### One-time setup
+
+1. Go to **GitHub Settings → Copilot → Model Context Protocol (MCP)** (or your
+   organisation's equivalent settings page).
+
+2. Paste the following JSON into the **MCP configuration** field and save:
+
+   ```json
+   {
+     "mcpServers": {
+       "jdtls": {
+         "type": "stdio",
+         "command": "bash",
+         "args": [
+           "-c",
+           "f=$(mktemp /tmp/jdtls-mcp-bootstrap-XXXXXX.sh) && curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/download-and-start.sh -o \"$f\" && chmod +x \"$f\" && exec \"$f\""
+         ]
+       }
+     }
+   }
+   ```
+
+   **What this does:**
+   - Downloads `scripts/download-and-start.sh` from this repository to a
+     temporary file (so stdin remains connected to the MCP client, not to `curl`).
+   - The script auto-detects the agent OS and CPU architecture.
+   - Downloads the latest `jdtls-mcp` release archive from GitHub and caches it
+     at `~/.cache/jdtls-mcp/<version>/`.
+   - Starts the MCP server against `$GITHUB_WORKSPACE` (the repository root
+     automatically provided by the Copilot agent environment).
+
+3. That's it — the next time you open a Copilot coding agent session on **any**
+   Java repository, the `jdtls` MCP server will start automatically.
+
+> [!NOTE]
+> The first run downloads ~53 MB and takes **~60–90 s** while Maven imports the
+> project and the JDT index warms up.  Subsequent runs in the same agent
+> environment reuse the cached binary and are faster.
+
+> [!TIP]
+> The bootstrap command fetches `download-and-start.sh` from the `main` branch
+> each time, which always gives you the latest script logic.  If you prefer to
+> pin to a specific release, replace `main` in the URL with a tag such as `v1.0.0`.
+
+---
+
 ## Testing with MCP clients
 
 The repository includes a ready-to-use sample Java project at
