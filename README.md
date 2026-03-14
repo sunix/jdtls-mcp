@@ -668,6 +668,50 @@ After the workflow completes:
 
 ---
 
+## Related projects
+
+### [sunix/java-lsp-mcp-server](https://github.com/sunix/java-lsp-mcp-server)
+
+A parallel experiment tackling the same goal — exposing jdtls to AI agents via
+MCP — but with a fundamentally different architecture.
+
+| Aspect | **jdtls-mcp** (this project) | **java-lsp-mcp-server** |
+|---|---|---|
+| Architecture | *Embedded* — runs **as** an Eclipse OSGi product | *External controller* — runs jdtls as a managed subprocess |
+| MCP transport | **stdio** (NDJSON, one JSON object per line) | **HTTP / SSE** |
+| jdtls version | Fixed at build time via the Tycho target platform | Auto-downloaded at runtime (configurable URL or latest) |
+| Distribution | Pre-built platform archives (~63 MB each) | Standard Quarkus JAR or GraalVM native binary |
+| Workspace | Fixed at server startup (CLI argument) | Changed at runtime via `initializeWorkspace()` tool |
+| Java required | Java 21 | Java 25 |
+| Framework | Tycho / OSGi | [Quarkus](https://quarkus.io/) + [quarkus-mcp-server](https://docs.quarkiverse.io/quarkus-mcp-server/dev/) |
+| LSP tools | hover, document symbols, references, workspace symbols, definition | document symbols, completions, diagnostics, format, definition |
+| Lifecycle tools | None (transparent to the LLM) | `startJdtls`, `stopJdtls`, `checkJdtls`, `installJdtls`, `initializeWorkspace` |
+
+**When to use which:**
+
+- **jdtls-mcp** — zero operational overhead for the LLM agent; the server is
+  ready when the process starts. Good fit for stdio-only MCP clients and
+  fixed-workspace setups.
+- **java-lsp-mcp-server** — better for HTTP-based MCP clients, multi-workspace
+  scenarios, or environments where you want the agent to control the jdtls
+  lifecycle directly. The auto-download removes the need to ship a pre-built
+  product per platform.
+
+### Improvements this project could borrow
+
+Looking at what `java-lsp-mcp-server` has that this project currently lacks:
+
+| Missing tool | LSP request | What it enables |
+|---|---|---|
+| `java_diagnostics` | `textDocument/publishDiagnostics` (notification) | Surface compilation errors / warnings to the agent without opening an IDE |
+| `java_completions` | `textDocument/completion` | Let the agent request completions at a position — useful for code generation workflows |
+| `java_format` | `textDocument/formatting` + `textDocument/didChange` | Normalise generated code before committing |
+
+All three are available through the jdtls handlers already on the classpath
+(`DocumentLifeCycleHandler`, `CompletionHandler`, `FormattingHandler`), so
+they can be added to `JdtlsMcpTools.java` following the same pattern as the
+existing tools.
+
 ## Technology stack
 
 | Library | Role |
