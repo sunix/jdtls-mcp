@@ -79,8 +79,9 @@ public class McpApplication implements IApplication {
 		// ---------------------------------------------------------------
 		// 2.  Initialise the workspace
 		//     This mirrors what InitHandler does when the LSP client sends
-		//     an "initialize" request.  We use the workspace that was
-		//     passed to Equinox via the standard -data argument.
+		//     an "initialize" request.  We use the workspace root passed via
+		//     the system property "jdtls.workspace.root" (set by start-mcp-server.sh),
+		//     falling back to the Eclipse -data location for backward compatibility.
 		// ---------------------------------------------------------------
 		// Seed ClientPreferences so ProjectsManager.initializeProjects() does not NPE.
 		// Normally this is done during the LSP "initialize" handshake; we do it
@@ -88,8 +89,10 @@ public class McpApplication implements IApplication {
 		preferencesManager.updateClientPrefences(
 				new ClientCapabilities(), java.util.Collections.emptyMap());
 
-		IPath workspaceRoot = Path.fromOSString(
-				org.eclipse.core.runtime.Platform.getLocation().toOSString());
+		String workspaceRootStr = System.getProperty("jdtls.workspace.root");
+		IPath workspaceRoot = workspaceRootStr != null
+				? Path.fromOSString(workspaceRootStr)
+				: Path.fromOSString(org.eclipse.core.runtime.Platform.getLocation().toOSString());
 		projectsManager.initializeProjects(
 				java.util.Collections.singletonList(workspaceRoot), monitor);
 

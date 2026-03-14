@@ -183,6 +183,14 @@ binary for the agent's platform and caches it for subsequent runs.
          "args": [
            "-c",
            "f=$(mktemp /tmp/jdtls-mcp-bootstrap-XXXXXX.sh) && curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/download-and-start.sh -o \"$f\" && chmod +x \"$f\" && exec \"$f\""
+         ],
+         "tools": [
+           "java_hover",
+           "java_definition",
+           "java_references",
+           "java_completion",
+           "java_document_symbols",
+           "java_workspace_symbols"
          ]
        }
      }
