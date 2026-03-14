@@ -39,7 +39,7 @@ subprocess, no network hop, no second Java process.
 
 | Tool  | Version | Notes                       |
 |-------|---------|-----------------------------|
-| Java  | 17 +    | Must be on `PATH`           |
+| Java  | 21 +    | Must be on `PATH`           |
 | Maven | 3.9 +   | For building with Tycho     |
 
 No other tooling is required.  Internet access is needed on first build to
@@ -53,6 +53,9 @@ resolve the Eclipse p2 target platform and Maven dependencies.
 jdtls-mcp/
 ├── agent.md                              # This file
 ├── pom.xml                               # Tycho parent POM
+├── scripts/
+│   ├── start-mcp-server.sh               # Start the server against any workspace
+│   └── test-mcp.sh                       # Smoke-test all tools against test-workspace
 ├── org.eclipse.jdt.ls.mcp.target/       # Eclipse target-platform definition (p2 + Maven deps)
 │   └── org.eclipse.jdt.ls.mcp.tp.target
 ├── org.eclipse.jdt.ls.mcp/              # OSGi eclipse-plugin — MCP bridge
@@ -108,27 +111,31 @@ mvn package -pl org.eclipse.jdt.ls.mcp.product -am
 
 ## How to start in development mode
 
-After a successful build, set `PRODUCT_DIR` to your platform folder, then launch
-the MCP server pointing at the included test workspace:
+Use the provided script — it auto-detects OS and architecture:
 
 ```bash
-# Linux x86_64
-export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
+# Against the bundled test workspace
+./scripts/start-mcp-server.sh
 
-# macOS arm64 (Apple Silicon)
-# export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/macosx/cocoa/aarch64"
-
-# Discover the exact equinox launcher jar name
-LAUNCHER=$(ls "$PRODUCT_DIR/plugins/" | grep equinox.launcher_ | head -1)
-
-java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
-     -jar "$PRODUCT_DIR/plugins/$LAUNCHER" \
-     -configuration "$PRODUCT_DIR/configuration" \
-     -data "$PWD/test-workspace/hello-jdtls"
+# Against your own project
+./scripts/start-mcp-server.sh /path/to/my-java-project /tmp/jdtls-data
 ```
 
 The server reads MCP messages from **stdin** and writes responses to **stdout**.
 It will block until the client disconnects or the process is killed.
+
+If you need to launch manually (e.g., from a different working directory):
+
+```bash
+export PRODUCT_DIR="$PWD/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
+LAUNCHER=$(ls "$PRODUCT_DIR/plugins/org.eclipse.equinox.launcher_"*.jar | head -1)
+
+java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
+     -Dosgi.bundles.defaultStartLevel=4 \
+     -jar "$LAUNCHER" \
+     -configuration "$PRODUCT_DIR/configuration" \
+     -data "$PWD/test-workspace/hello-jdtls"
+```
 
 ---
 
@@ -137,70 +144,58 @@ It will block until the client disconnects or the process is killed.
 The `test-workspace/hello-jdtls/` directory in this repo is a ready-to-use
 Maven Java project.  Use it as the jdtls workspace when testing MCP tools.
 
-### Step 1 — Build the project
+### Quickest path — smoke-test script
+
+```bash
+mvn package -DskipTests     # build first if you haven't already
+./scripts/test-mcp.sh       # runs all tool calls, prints raw JSON-RPC responses
+```
+
+`scripts/test-mcp.sh` starts the server, sends the MCP handshake followed by
+one call for every tool, and exits.  Startup takes **~60 s** on first run while
+Maven imports the project and the JDT type-name index warms up.
+
+### Manual step-by-step
+
+#### Step 1 — Build
 
 ```bash
 mvn package -DskipTests
 ```
 
-### Step 2 — Start the MCP server in the background
+#### Step 2 — Start the server and send messages via FIFO
+
+> **Transport format:** the server uses **NDJSON** (one JSON object per line,
+> no `Content-Length` framing).  Do NOT use LSP-style `Content-Length` headers.
 
 ```bash
-export REPO_ROOT="$PWD"
-export PRODUCT_DIR="$REPO_ROOT/org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product/linux/gtk/x86_64"
-LAUNCHER=$(ls "$PRODUCT_DIR/plugins/" | grep equinox.launcher_ | head -1)
+# Create a named FIFO so stdin stays open while the server processes requests
+mkfifo /tmp/mcp-test.fifo
 
-java -Declipse.application=org.eclipse.jdt.ls.mcp.app \
-     -jar "$PRODUCT_DIR/plugins/$LAUNCHER" \
-     -configuration "$PRODUCT_DIR/configuration" \
-     -data "$REPO_ROOT/test-workspace/hello-jdtls" \
-     > /tmp/jdtls-mcp.log 2>&1 &
-
-MCP_PID=$!
-echo "MCP server PID: $MCP_PID"
-sleep 5   # allow the Eclipse workspace to initialise
-```
-
-### Step 3 — Send an MCP initialise handshake and tool call
-
-Use a small Python or shell script to send JSON-RPC messages over the process's
-stdin/stdout.  Example: list all symbols in `Greeter.java`:
-
-```bash
-WORKSPACE="$REPO_ROOT/test-workspace/hello-jdtls"
+WORKSPACE="$PWD/test-workspace/hello-jdtls"
 FILE_URI="file://$WORKSPACE/src/main/java/com/example/Greeter.java"
 
-python3 - <<'EOF'
-import json, subprocess, sys
+# Write messages into the FIFO in the background
+{
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}'
+  printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}'
+  printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"java_document_symbols\",\"arguments\":{\"uri\":\"$FILE_URI\"}}}"
+  sleep 300   # keep stdin open
+} > /tmp/mcp-test.fifo &
+WRITER=$!
 
-req_init = {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-    "protocolVersion":"2024-11-05",
-    "clientInfo":{"name":"test-client","version":"0.0.1"},
-    "capabilities":{}}}
+# Run the server (reads from fifo, writes JSON responses to stdout)
+./scripts/start-mcp-server.sh 2>/dev/null < /tmp/mcp-test.fifo
 
-req_initialized = {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
-
-req_symbols = {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
-    "name":"java_document_symbols",
-    "arguments":{"uri":"file://$WORKSPACE/src/main/java/com/example/Greeter.java"}}}
-
-def encode(msg):
-    body = json.dumps(msg)
-    return f"Content-Length: {len(body)}\r\n\r\n{body}"
-
-msgs = encode(req_init) + encode(req_initialized) + encode(req_symbols)
-print(msgs)
-EOF
+kill $WRITER 2>/dev/null
+rm /tmp/mcp-test.fifo
 ```
 
-For a fully automated smoke-test, pipe MCP messages to the server process's
-stdin and read the JSON-RPC responses from stdout.
+#### Step 3 — Interpret the output
 
-### Step 4 — Stop the server
-
-```bash
-kill $MCP_PID
-```
+Each response is one JSON object on its own line.  Responses may arrive out of
+order relative to requests (identified by matching `id` fields).
 
 ---
 
@@ -273,6 +268,18 @@ build: upgrade Tycho to 5.1.0
   file.  Do **not** add plain Maven `<dependency>` entries to plugin modules.
 - **LSP position convention**: all positions are **0-based** line and character
   offsets (LSP convention), not 1-based.
+- **MCP transport**: stdio, **NDJSON** format — one JSON object per line with a
+  trailing newline.  There is no `Content-Length` header framing (unlike LSP).
+  The `StdioServerTransportProvider` from the MCP Java SDK uses
+  `BufferedReader.readLine()` for input and appends `\n` to each output object.
+- **Startup sequence**: `McpApplication` blocks stdin until the full startup
+  sequence completes: Maven import → `waitForProjectRegistryRefreshJob()` →
+  `workspace.build(FULL_BUILD)` → `waitUntilIndexesReady()`.  This ensures the
+  JDT type-name index is populated before any tool call arrives, avoiding empty
+  results from `java_workspace_symbols` and `java_references`.
+- **jdt.ls-java-project**: when the workspace root contains no `.project` file,
+  jdtls creates a synthetic `jdt.ls-java-project` directory there.  This is
+  generated at runtime and is listed in `.gitignore`.
 - **MCP transport**: stdio only (no HTTP/SSE transport is implemented yet).
 
 ---
