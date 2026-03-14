@@ -69,7 +69,9 @@ jobs:
 
       - name: Commit release version
         run: |
-          git add -A
+          # Only stage what tycho-versions-plugin changed (pom.xml, MANIFEST.MF, .product).
+          # Never 'git add -A' — build artifacts from a previous run could be lurking.
+          git add '*.xml' '*/META-INF/MANIFEST.MF' '**/*.product'
           git commit -m "release: ${{ steps.versions.outputs.tag }}"
 
       - name: Tag release
@@ -88,6 +90,11 @@ jobs:
           PROD="org.eclipse.jdt.ls.mcp.product/target/products/jdtls-mcp.product"
           TAG="${{ steps.versions.outputs.tag }}"   # e.g. v1.0.0
 
+          # Write archives to RUNNER_TEMP so they are never inside the workspace
+          # and cannot accidentally be committed by a subsequent git add.
+          OUTDIR="$RUNNER_TEMP/archives"
+          mkdir -p "$OUTDIR"
+
           # Helper: pack a product directory + scripts/ into a tar.gz.
           # The archive root is always "jdtls-mcp/" for a predictable extract path.
           pkg_tar() {
@@ -99,23 +106,27 @@ jobs:
             rm -rf _pkg
           }
 
-          pkg_tar "$PROD/linux/gtk/x86_64"     "jdtls-mcp-${TAG}-linux-x86_64.tar.gz"
-          pkg_tar "$PROD/linux/gtk/aarch64"    "jdtls-mcp-${TAG}-linux-aarch64.tar.gz"
-          pkg_tar "$PROD/macosx/cocoa/x86_64"  "jdtls-mcp-${TAG}-macos-x86_64.tar.gz"
-          pkg_tar "$PROD/macosx/cocoa/aarch64" "jdtls-mcp-${TAG}-macos-aarch64.tar.gz"
+          pkg_tar "$PROD/linux/gtk/x86_64"     "$OUTDIR/jdtls-mcp-${TAG}-linux-x86_64.tar.gz"
+          pkg_tar "$PROD/linux/gtk/aarch64"    "$OUTDIR/jdtls-mcp-${TAG}-linux-aarch64.tar.gz"
+          pkg_tar "$PROD/macosx/cocoa/x86_64"  "$OUTDIR/jdtls-mcp-${TAG}-macos-x86_64.tar.gz"
+          pkg_tar "$PROD/macosx/cocoa/aarch64" "$OUTDIR/jdtls-mcp-${TAG}-macos-aarch64.tar.gz"
 
           # Windows: use zip
           mkdir -p _pkg/jdtls-mcp
           cp -r "$PROD/win32/win32/x86_64"/. _pkg/jdtls-mcp/
           cp -r scripts _pkg/jdtls-mcp/scripts
-          (cd _pkg && zip -qr "$OLDPWD/jdtls-mcp-${TAG}-windows-x86_64.zip" jdtls-mcp)
+          (cd _pkg && zip -qr "$OUTDIR/jdtls-mcp-${TAG}-windows-x86_64.zip" jdtls-mcp)
           rm -rf _pkg
+
+          # Export the output directory path for subsequent steps
+          echo "ARCHIVES=$OUTDIR" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.versions.outputs.tag }}
           name: "jdtls-mcp ${{ steps.versions.outputs.tag }}"
+          # Archives live in RUNNER_TEMP, outside the workspace
           body: |
             ## Installation
 
@@ -154,11 +165,11 @@ jobs:
             Startup takes ~60 s on first run while Maven imports the project and
             the JDT index warms up.
           files: |
-            jdtls-mcp-${{ steps.versions.outputs.tag }}-linux-x86_64.tar.gz
-            jdtls-mcp-${{ steps.versions.outputs.tag }}-linux-aarch64.tar.gz
-            jdtls-mcp-${{ steps.versions.outputs.tag }}-macos-x86_64.tar.gz
-            jdtls-mcp-${{ steps.versions.outputs.tag }}-macos-aarch64.tar.gz
-            jdtls-mcp-${{ steps.versions.outputs.tag }}-windows-x86_64.zip
+            ${{ env.ARCHIVES }}/jdtls-mcp-${{ steps.versions.outputs.tag }}-linux-x86_64.tar.gz
+            ${{ env.ARCHIVES }}/jdtls-mcp-${{ steps.versions.outputs.tag }}-linux-aarch64.tar.gz
+            ${{ env.ARCHIVES }}/jdtls-mcp-${{ steps.versions.outputs.tag }}-macos-x86_64.tar.gz
+            ${{ env.ARCHIVES }}/jdtls-mcp-${{ steps.versions.outputs.tag }}-macos-aarch64.tar.gz
+            ${{ env.ARCHIVES }}/jdtls-mcp-${{ steps.versions.outputs.tag }}-windows-x86_64.zip
 
       # -----------------------------------------------------------------------
       # Push the release tag and then bump to next snapshot so main stays
@@ -171,7 +182,7 @@ jobs:
 
       - name: Commit next snapshot version
         run: |
-          git add -A
+          git add '*.xml' '*/META-INF/MANIFEST.MF' '**/*.product'
           git commit -m "chore: prepare next development version ${{ steps.versions.outputs.next_version }}"
 
       - name: Push tag and snapshot commit

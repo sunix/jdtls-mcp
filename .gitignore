@@ -1,6 +1,10 @@
 # Build output
 target/
 
+# Release archives built locally — should never be committed
+*.tar.gz
+*.zip
+
 # Eclipse/IDE project files
 .project
 .classpath
