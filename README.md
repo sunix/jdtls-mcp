@@ -622,6 +622,38 @@ This project uses **Conventional Commits**:
 | `build`    | Build config changes (pom.xml, target platform, …)      |
 | `chore`    | Maintenance (CI, .gitignore, …)                         |
 
+### Releasing
+
+Releases are fully automated via the **Release** GitHub Actions workflow
+(`.github/workflows/release.yml`). You never need to edit version numbers
+manually or push a tag yourself.
+
+**What the workflow does automatically:**
+1. Runs `tycho-versions:set-version` to update all version strings atomically —
+   `pom.xml` files, `MANIFEST.MF` (`Bundle-Version`), and `jdtls-mcp.product`.
+2. Commits the version bump and creates the `v<version>` git tag.
+3. Builds the product for all 5 platforms with Maven / Tycho.
+4. Packages per-platform archives and publishes a GitHub Release with them.
+5. Bumps versions to the next `-SNAPSHOT`, commits, and pushes everything
+   (tag + both commits) back to `main`.
+
+**To cut a release:**
+
+1. Go to **Actions → Release → Run workflow** on GitHub.
+2. Fill in **Release version** (e.g. `1.0.0`).
+   Optionally fill in **Next development version** (e.g. `1.0.1-SNAPSHOT`).
+   Leave it blank to auto-increment the patch segment.
+3. Click **Run workflow** — that's it.
+
+After the workflow completes:
+- A GitHub Release tagged `v1.0.0` appears with the 5 platform archives.
+- `main` has two new commits: the release version bump and the snapshot bump.
+
+> **Branch protection note:** if `main` has push restrictions, grant the
+> `github-actions[bot]` the **bypass** permission, or use a PAT stored as
+> `GH_RELEASE_TOKEN` and reference it in the workflow's `token:` field
+> instead of `secrets.GITHUB_TOKEN`.
+
 ### Key source files
 
 | File | Purpose |
