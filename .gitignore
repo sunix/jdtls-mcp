@@ -10,6 +10,9 @@ target/
 *.iml
 .idea/
 
+# jdtls scratch project created in the workspace root during server startup
+jdt.ls-java-project/
+
 # Tycho copies Maven jars into lib/ at build time; never commit them
 */lib/
 
