@@ -46,6 +46,19 @@ if [[ -z "$LAUNCHER" ]]; then
   exit 1
 fi
 
+# ---- Locate Java 21+ -------------------------------------------------------
+# On GitHub-hosted runners JAVA_HOME_21_X64 points to the pre-installed
+# Temurin 21 even when the default 'java' on PATH is an older version.
+# Prefer it when available; fall back to whatever 'java' is on PATH.
+JAVA_CMD="java"
+for _jh in "${JAVA_HOME_21_X64:-}" "${JAVA_HOME_21_ARM64:-}" "${JAVA_HOME:-}"; do
+  if [[ -n "$_jh" && -x "$_jh/bin/java" ]]; then
+    JAVA_CMD="$_jh/bin/java"
+    break
+  fi
+done
+echo "  java      : $JAVA_CMD" >&2
+
 # ---- Arguments ------------------------------------------------------------
 WORKSPACE="${1:-$REPO_DIR/test-workspace/hello-jdtls}"
 DATA_DIR="${2:-/tmp/jdtls-mcp-data}"
@@ -58,7 +71,7 @@ echo "" >&2
 
 mkdir -p "$DATA_DIR"
 
-exec java \
+exec "$JAVA_CMD" \
   -Declipse.application=org.eclipse.jdt.ls.mcp.app \
   -Dosgi.bundles.defaultStartLevel=4 \
   -Djdtls.workspace.root="$WORKSPACE" \
