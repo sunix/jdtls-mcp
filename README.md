@@ -162,19 +162,13 @@ All position-based tools use **0-based** line and character offsets (LSP convent
 
 ## GitHub Copilot Coding Agent
 
-`jdtls-mcp` integrates with the GitHub Copilot coding agent via two components:
-
-- **`copilot-setup-steps.yml`** — a GitHub Actions workflow that downloads and
-  installs jdtls-mcp **before** the agent starts, putting it at a stable cache
-  path (`~/.cache/jdtls-mcp/current/`).
-- **MCP server configuration** — a JSON snippet (added to your repository's
-  Copilot settings) that starts the pre-installed server.  Because the binary is
-  already on disk by the time the MCP config runs, startup is fast with no
-  network activity.
+Two things are needed: a one-time setup workflow (Java 21) and the MCP server
+configuration (download + start on each session).
 
 ### Step 1 — Add the setup workflow
 
-Add the following file to your **Java repository** (not this repo):
+Add the following file to your **Java repository** (not this repo).
+It runs before every Copilot coding agent session and ensures Java 21 is on PATH.
 
 `.github/workflows/copilot-setup-steps.yml`
 
@@ -190,16 +184,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install jdtls-mcp
-        run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/install.sh)
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 ```
-
-This workflow runs automatically before each Copilot coding agent session.
-It downloads the latest `jdtls-mcp` release for the agent's platform, extracts
-it to `~/.cache/jdtls-mcp/<version>/`, and creates the stable symlink
-`~/.cache/jdtls-mcp/current`.  Subsequent runs skip the download if the version
-is already cached.
 
 ### Step 2 — Add the MCP server configuration
 
@@ -214,7 +204,7 @@ organisation's equivalent) and paste the following JSON:
       "command": "bash",
       "args": [
         "-c",
-        "exec $HOME/.cache/jdtls-mcp/current/scripts/start-mcp-server.sh $GITHUB_WORKSPACE"
+        "f=$(mktemp /tmp/jdtls-mcp-XXXXXX.sh) && curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/download-and-start.sh -o \"$f\" && chmod +x \"$f\" && exec \"$f\""
       ],
       "tools": ["*"]
     }
@@ -222,8 +212,10 @@ organisation's equivalent) and paste the following JSON:
 }
 ```
 
-`$HOME` and `$GITHUB_WORKSPACE` are expanded by bash at runtime using the
-GitHub Actions runner environment variables — no Copilot secrets needed.
+On each session, `download-and-start.sh` fetches the latest release (or reuses
+the cached copy at `~/.cache/jdtls-mcp/<version>/`) and starts the MCP server
+against `$GITHUB_WORKSPACE`.  The `mktemp` pattern keeps stdin free for MCP
+traffic while `curl` runs.
 
 > [!NOTE]
 > Startup takes **~60 s** on the first session while Maven imports the project
