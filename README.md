@@ -160,65 +160,75 @@ All position-based tools use **0-based** line and character offsets (LSP convent
 
 ---
 
-## GitHub Copilot Coding Agent (zero-install configuration)
+## GitHub Copilot Coding Agent
 
-You can enable `jdtls-mcp` for any Java repository on GitHub by pasting a
-single JSON snippet into your **GitHub Copilot settings** → **Model Context
-Protocol (MCP)**.  No manual download or installation is required — the
-configuration uses a bootstrap script that auto-downloads the correct release
-binary for the agent's platform and caches it for subsequent runs.
+`jdtls-mcp` integrates with the GitHub Copilot coding agent via two components:
 
-### One-time setup
+- **`copilot-setup-steps.yml`** — a GitHub Actions workflow that downloads and
+  installs jdtls-mcp **before** the agent starts, putting it at a stable cache
+  path (`~/.cache/jdtls-mcp/current/`).
+- **MCP server configuration** — a JSON snippet (added to your repository's
+  Copilot settings) that starts the pre-installed server.  Because the binary is
+  already on disk by the time the MCP config runs, startup is fast with no
+  network activity.
 
-1. Go to **GitHub Settings → Copilot → Model Context Protocol (MCP)** (or your
-   organisation's equivalent settings page).
+### Step 1 — Add the setup workflow
 
-2. Paste the following JSON into the **MCP configuration** field and save:
+Add the following file to your **Java repository** (not this repo):
 
-   ```json
-   {
-     "mcpServers": {
-       "jdtls": {
-         "type": "stdio",
-         "command": "bash",
-         "args": [
-           "-c",
-           "f=$(mktemp /tmp/jdtls-mcp-bootstrap-XXXXXX.sh) && curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/download-and-start.sh -o \"$f\" && chmod +x \"$f\" && exec \"$f\""
-         ],
-         "tools": [
-           "java_hover",
-           "java_definition",
-           "java_references",
-           "java_completion",
-           "java_document_symbols",
-           "java_workspace_symbols"
-         ]
-       }
-     }
-   }
-   ```
+`.github/workflows/copilot-setup-steps.yml`
 
-   **What this does:**
-   - Downloads `scripts/download-and-start.sh` from this repository to a
-     temporary file (so stdin remains connected to the MCP client, not to `curl`).
-   - The script auto-detects the agent OS and CPU architecture.
-   - Downloads the latest `jdtls-mcp` release archive from GitHub and caches it
-     at `~/.cache/jdtls-mcp/<version>/`.
-   - Starts the MCP server against `$GITHUB_WORKSPACE` (the repository root
-     automatically provided by the Copilot agent environment).
+```yaml
+on:
+  workflow_dispatch:
 
-3. That's it — the next time you open a Copilot coding agent session on **any**
-   Java repository, the `jdtls` MCP server will start automatically.
+permissions:
+  contents: read
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install jdtls-mcp
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/sunix/jdtls-mcp/main/scripts/install.sh)
+```
+
+This workflow runs automatically before each Copilot coding agent session.
+It downloads the latest `jdtls-mcp` release for the agent's platform, extracts
+it to `~/.cache/jdtls-mcp/<version>/`, and creates the stable symlink
+`~/.cache/jdtls-mcp/current`.  Subsequent runs skip the download if the version
+is already cached.
+
+### Step 2 — Add the MCP server configuration
+
+Go to **GitHub Settings → Copilot → Coding agent → MCP configuration** (or your
+organisation's equivalent) and paste the following JSON:
+
+```json
+{
+  "mcpServers": {
+    "jdtls": {
+      "type": "local",
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec $HOME/.cache/jdtls-mcp/current/scripts/start-mcp-server.sh $GITHUB_WORKSPACE"
+      ],
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+`$HOME` and `$GITHUB_WORKSPACE` are expanded by bash at runtime using the
+GitHub Actions runner environment variables — no Copilot secrets needed.
 
 > [!NOTE]
-> The first run downloads ~53 MB and takes **~60–90 s** while Maven imports the
-> project and the JDT index warms up.  Subsequent runs in the same agent
-> environment reuse the cached binary and are faster.
-
-> [!TIP]
-> The bootstrap command fetches `download-and-start.sh` from the `main` branch
-> each time, which always gives you the latest script logic.  If you prefer to
-> pin to a specific release, replace `main` in the URL with a tag such as `v1.0.0`.
+> Startup takes **~60 s** on the first session while Maven imports the project
+> and the JDT type-name index warms up.  Subsequent sessions against the same
+> data directory are faster.
 
 ---
 
