@@ -31,6 +31,94 @@ The MCP bundle calls jdtls handler classes **directly in the same JVM** — no
 subprocess spawning, no network hop, no second Java process.  LLM agents talk
 to the Eclipse application via stdio using the MCP protocol.
 
+## How it works
+
+1. **Target platform** (`org.eclipse.jdt.ls.mcp.target`) references the jdtls
+   snapshot p2 repository, Eclipse 2025-12 release train, LSP4J 0.24.0, and
+   the MCP Java SDK + langchain4j from Maven Central (wrapped as OSGi bundles
+   by Tycho's `missingManifest="generate"` feature).
+
+2. **Plugin bundle** (`org.eclipse.jdt.ls.mcp`) is a standard `eclipse-plugin`
+   module built by Tycho.  It declares `Require-Bundle: org.eclipse.jdt.ls.core`
+   and calls jdtls handler classes (`HoverHandler`, `NavigateToDefinitionHandler`,
+   `ReferencesHandler`, `CompletionHandler`, `DocumentSymbolHandler`,
+   `WorkspaceSymbolHandler`) directly.
+
+3. **MCP Application** (`McpApplication`) registers under the extension point
+   `org.eclipse.core.runtime.applications` as `org.eclipse.jdt.ls.mcp.app`.
+   When selected as the Eclipse application, it initialises the jdtls workspace
+   and starts an MCP server on stdio.
+
+4. **Product** (`org.eclipse.jdt.ls.mcp.product`) packages all jdtls bundles
+   together with the new MCP bundle into a distributable Eclipse product.
+
+## Related projects
+
+### [sunix/java-lsp-mcp-server](https://github.com/sunix/java-lsp-mcp-server)
+
+A parallel experiment tackling the same goal — exposing jdtls to AI agents via
+MCP — but with a fundamentally different architecture.
+
+| Aspect | **jdtls-mcp** (this project) | **java-lsp-mcp-server** |
+|---|---|---|
+| Architecture | *Embedded* — runs **as** an Eclipse OSGi product | *External controller* — runs jdtls as a managed subprocess |
+| MCP transport | **stdio** (NDJSON, one JSON object per line) | **HTTP / SSE** |
+| jdtls version | Fixed at build time via the Tycho target platform | Auto-downloaded at runtime (configurable URL or latest) |
+| Distribution | Pre-built platform archives (~63 MB each) | Standard Quarkus JAR or GraalVM native binary |
+| Workspace | Fixed at server startup (CLI argument) | Changed at runtime via `initializeWorkspace()` tool |
+| Java required | Java 21 | Java 25 |
+| Framework | Tycho / OSGi | [Quarkus](https://quarkus.io/) + [quarkus-mcp-server](https://docs.quarkiverse.io/quarkus-mcp-server/dev/) |
+| LSP tools | hover, document symbols, references, workspace symbols, definition, **diagnostics** | document symbols, completions, diagnostics, format, definition |
+| Lifecycle tools | None (transparent to the LLM) | `startJdtls`, `stopJdtls`, `checkJdtls`, `installJdtls`, `initializeWorkspace` |
+
+**When to use which:**
+
+- **jdtls-mcp** — zero operational overhead for the LLM agent; the server is
+  ready when the process starts. Good fit for stdio-only MCP clients and
+  fixed-workspace setups.
+- **java-lsp-mcp-server** — better for HTTP-based MCP clients, multi-workspace
+  scenarios, or environments where you want the agent to control the jdtls
+  lifecycle directly. The auto-download removes the need to ship a pre-built
+  product per platform.
+
+### Improvements this project could borrow
+
+Looking at what `java-lsp-mcp-server` has that this project currently lacks:
+
+| Missing tool | LSP request | What it enables |
+|---|---|---|
+| `java_completions` | `textDocument/completion` | Let the agent request completions at a position — useful for code generation workflows |
+| `java_format` | `textDocument/formatting` + `textDocument/didChange` | Normalise generated code before committing |
+
+Both are available through the jdtls handlers already on the classpath
+(`CompletionHandler`, `FormattingHandler`), so
+they can be added to `JdtlsMcpTools.java` following the same pattern as the
+existing tools.
+
+## Technology stack
+
+| Library | Role |
+|---------|------|
+| [Tycho](https://github.com/eclipse-tycho/tycho) | OSGi / Eclipse plugin build system |
+| [eclipse-jdtls](https://github.com/eclipse-jdtls/eclipse.jdt.ls) | Java compiler, handlers, project manager (via p2) |
+| [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk) (`io.modelcontextprotocol.sdk:mcp-core`) | MCP server protocol + stdio transport |
+| [langchain4j-core](https://github.com/langchain4j/langchain4j) | `@Tool` / `@P` annotations |
+| [LSP4J 0.24.0](https://github.com/eclipse-lsp4j/lsp4j) | LSP types used by jdtls handlers |
+
+## Available MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `java_hover` | Get hover information (Javadoc, type info) at a position |
+| `java_definition` | Find the definition of a symbol |
+| `java_references` | Find all references to a symbol |
+| `java_completion` | Get code completion suggestions |
+| `java_document_symbols` | List all symbols in a file |
+| `java_workspace_symbols` | Search for symbols across the workspace |
+| `java_diagnostics` | Get compilation errors and warnings for a file or workspace |
+
+All position-based tools use **0-based** line and character offsets (LSP convention).
+
 ## Project structure
 
 ```
@@ -54,26 +142,7 @@ jdtls-mcp/
 └── test-workspace/hello-jdtls/        # Sample Maven project for manual testing
 ```
 
-## How it works
-
-1. **Target platform** (`org.eclipse.jdt.ls.mcp.target`) references the jdtls
-   snapshot p2 repository, Eclipse 2025-12 release train, LSP4J 0.24.0, and
-   the MCP Java SDK + langchain4j from Maven Central (wrapped as OSGi bundles
-   by Tycho's `missingManifest="generate"` feature).
-
-2. **Plugin bundle** (`org.eclipse.jdt.ls.mcp`) is a standard `eclipse-plugin`
-   module built by Tycho.  It declares `Require-Bundle: org.eclipse.jdt.ls.core`
-   and calls jdtls handler classes (`HoverHandler`, `NavigateToDefinitionHandler`,
-   `ReferencesHandler`, `CompletionHandler`, `DocumentSymbolHandler`,
-   `WorkspaceSymbolHandler`) directly.
-
-3. **MCP Application** (`McpApplication`) registers under the extension point
-   `org.eclipse.core.runtime.applications` as `org.eclipse.jdt.ls.mcp.app`.
-   When selected as the Eclipse application, it initialises the jdtls workspace
-   and starts an MCP server on stdio.
-
-4. **Product** (`org.eclipse.jdt.ls.mcp.product`) packages all jdtls bundles
-   together with the new MCP bundle into a distributable Eclipse product.
+---
 
 ## Prerequisites
 
@@ -143,22 +212,6 @@ from stdin and writes JSON-RPC responses to stdout.
 > Startup takes **~60 s** on the first run while Maven imports the project and
 > the JDT type-name index warms up.  Subsequent starts against the same data
 > directory are faster.
-
-## Available MCP tools
-
-| Tool | Description |
-|------|-------------|
-| `java_hover` | Get hover information (Javadoc, type info) at a position |
-| `java_definition` | Find the definition of a symbol |
-| `java_references` | Find all references to a symbol |
-| `java_completion` | Get code completion suggestions |
-| `java_document_symbols` | List all symbols in a file |
-| `java_workspace_symbols` | Search for symbols across the workspace |
-| `java_diagnostics` | Get compilation errors and warnings for a file or workspace |
-
-All position-based tools use **0-based** line and character offsets (LSP convention).
-
----
 
 ## GitHub Copilot Coding Agent
 
@@ -730,61 +783,6 @@ After the workflow completes:
 | `org.eclipse.jdt.ls.mcp.target/…tp.target` | Target platform: jdtls p2 repo + MCP SDK + langchain4j |
 | `org.eclipse.jdt.ls.mcp.product/jdtls-mcp.product` | Lists all OSGi bundles for the packaged product |
 | `test-workspace/hello-jdtls/` | Sample Maven project for manual testing |
-
----
-
-## Related projects
-
-### [sunix/java-lsp-mcp-server](https://github.com/sunix/java-lsp-mcp-server)
-
-A parallel experiment tackling the same goal — exposing jdtls to AI agents via
-MCP — but with a fundamentally different architecture.
-
-| Aspect | **jdtls-mcp** (this project) | **java-lsp-mcp-server** |
-|---|---|---|
-| Architecture | *Embedded* — runs **as** an Eclipse OSGi product | *External controller* — runs jdtls as a managed subprocess |
-| MCP transport | **stdio** (NDJSON, one JSON object per line) | **HTTP / SSE** |
-| jdtls version | Fixed at build time via the Tycho target platform | Auto-downloaded at runtime (configurable URL or latest) |
-| Distribution | Pre-built platform archives (~63 MB each) | Standard Quarkus JAR or GraalVM native binary |
-| Workspace | Fixed at server startup (CLI argument) | Changed at runtime via `initializeWorkspace()` tool |
-| Java required | Java 21 | Java 25 |
-| Framework | Tycho / OSGi | [Quarkus](https://quarkus.io/) + [quarkus-mcp-server](https://docs.quarkiverse.io/quarkus-mcp-server/dev/) |
-| LSP tools | hover, document symbols, references, workspace symbols, definition, **diagnostics** | document symbols, completions, diagnostics, format, definition |
-| Lifecycle tools | None (transparent to the LLM) | `startJdtls`, `stopJdtls`, `checkJdtls`, `installJdtls`, `initializeWorkspace` |
-
-**When to use which:**
-
-- **jdtls-mcp** — zero operational overhead for the LLM agent; the server is
-  ready when the process starts. Good fit for stdio-only MCP clients and
-  fixed-workspace setups.
-- **java-lsp-mcp-server** — better for HTTP-based MCP clients, multi-workspace
-  scenarios, or environments where you want the agent to control the jdtls
-  lifecycle directly. The auto-download removes the need to ship a pre-built
-  product per platform.
-
-### Improvements this project could borrow
-
-Looking at what `java-lsp-mcp-server` has that this project currently lacks:
-
-| Missing tool | LSP request | What it enables |
-|---|---|---|
-| `java_completions` | `textDocument/completion` | Let the agent request completions at a position — useful for code generation workflows |
-| `java_format` | `textDocument/formatting` + `textDocument/didChange` | Normalise generated code before committing |
-
-Both are available through the jdtls handlers already on the classpath
-(`CompletionHandler`, `FormattingHandler`), so
-they can be added to `JdtlsMcpTools.java` following the same pattern as the
-existing tools.
-
-## Technology stack
-
-| Library | Role |
-|---------|------|
-| [Tycho](https://github.com/eclipse-tycho/tycho) | OSGi / Eclipse plugin build system |
-| [eclipse-jdtls](https://github.com/eclipse-jdtls/eclipse.jdt.ls) | Java compiler, handlers, project manager (via p2) |
-| [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk) (`io.modelcontextprotocol.sdk:mcp-core`) | MCP server protocol + stdio transport |
-| [langchain4j-core](https://github.com/langchain4j/langchain4j) | `@Tool` / `@P` annotations |
-| [LSP4J 0.24.0](https://github.com/eclipse-lsp4j/lsp4j) | LSP types used by jdtls handlers |
 
 ## Licence
 
