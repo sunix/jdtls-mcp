@@ -240,7 +240,7 @@ build: upgrade Tycho to 5.1.0
 | File | Purpose |
 |------|---------|
 | `org.eclipse.jdt.ls.mcp/src/main/java/org/eclipse/jdt/ls/mcp/McpApplication.java` | Eclipse `IApplication` entry point — initialises jdtls workspace and starts the MCP stdio server |
-| `org.eclipse.jdt.ls.mcp/src/main/java/org/eclipse/jdt/ls/mcp/JdtlsMcpTools.java` | All MCP tool implementations (hover, definition, references, completion, symbols) |
+| `org.eclipse.jdt.ls.mcp/src/main/java/org/eclipse/jdt/ls/mcp/JdtlsMcpTools.java` | All MCP tool implementations (hover, definition, references, completion, symbols, workspace status) |
 | `org.eclipse.jdt.ls.mcp/src/main/java/org/eclipse/jdt/ls/mcp/McpServerPlugin.java` | OSGi `BundleActivator` |
 | `org.eclipse.jdt.ls.mcp/plugin.xml` | Registers the `org.eclipse.jdt.ls.mcp.app` Eclipse application extension |
 | `org.eclipse.jdt.ls.mcp.target/org.eclipse.jdt.ls.mcp.tp.target` | Target platform: jdtls p2 repo + MCP Java SDK + langchain4j from Maven Central |
@@ -277,6 +277,13 @@ build: upgrade Tycho to 5.1.0
   `workspace.build(FULL_BUILD)` → `waitUntilIndexesReady()`.  This ensures the
   JDT type-name index is populated before any tool call arrives, avoiding empty
   results from `java_workspace_symbols` and `java_references`.
+- **Workspace readiness**: even after the blocking startup sequence, the
+  workspace may be in a degraded state (e.g., Maven dependency resolution
+  failed, classpath errors).  Call `java_workspace_status` before other tools
+  to confirm the workspace is `READY` and to surface any `WARNING` conditions
+  (unresolved dependencies, POM errors).  The tool also detects late-arriving
+  background jobs (re-import, re-index) and reports `IMPORTING`, `BUILDING`,
+  or `INDEXING` while they are still running.
 - **jdt.ls-java-project**: when the workspace root contains no `.project` file,
   jdtls creates a synthetic `jdt.ls-java-project` directory there.  This is
   generated at runtime and is listed in `.gitignore`.

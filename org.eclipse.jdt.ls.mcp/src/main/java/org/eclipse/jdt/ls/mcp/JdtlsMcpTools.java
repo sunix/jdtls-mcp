@@ -1,14 +1,18 @@
 package org.eclipse.jdt.ls.mcp;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspaceRoot;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.jobs.IJobManager;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jdt.ls.core.internal.handlers.CompletionHandler;
 import org.eclipse.jdt.ls.core.internal.handlers.DocumentSymbolHandler;
@@ -254,6 +258,131 @@ public class JdtlsMcpTools {
 		}
 	}
 
+	/**
+	 * Returns the current state of the jdtls workspace: whether background import
+	 * or indexing jobs are still running, and whether any projects have classpath
+	 * or Maven dependency problems.
+	 *
+	 * <p>Possible {@code status} values:</p>
+	 * <ul>
+	 *   <li>{@code READY}     — workspace is fully initialized; no classpath issues detected</li>
+	 *   <li>{@code WARNING}   — workspace is ready but one or more projects have classpath or
+	 *                           Maven dependency problems (e.g. unresolved dependencies)</li>
+	 *   <li>{@code IMPORTING} — Maven / Gradle import job is still running</li>
+	 *   <li>{@code BUILDING}  — workspace build job is still running</li>
+	 *   <li>{@code INDEXING}  — JDT search-index job is still running</li>
+	 *   <li>{@code ERROR}     — unexpected error while querying workspace state</li>
+	 * </ul>
+	 */
+	@Tool("Returns the current state of the jdtls workspace (project import progress, "
+			+ "build status, index readiness, classpath / Maven dependency errors). "
+			+ "Call this before running other tools to verify the workspace is ready, "
+			+ "or to diagnose dependency-resolution failures.")
+	public String workspaceStatus() {
+		try {
+			// 1. Detect any still-running background jobs → IMPORTING / BUILDING / INDEXING
+			IJobManager jobManager = Job.getJobManager();
+			for (Job job : jobManager.find(null)) {
+				int state = job.getState();
+				if (state != Job.RUNNING && state != Job.WAITING) {
+					continue;
+				}
+				String name = job.getName();
+				if (name == null) {
+					continue;
+				}
+				String lower = name.toLowerCase();
+				if (lower.contains("maven") || lower.contains("m2e")
+						|| lower.contains("classpath") || lower.contains("import")) {
+					return "status: IMPORTING\nmessage: " + name;
+				}
+				if (lower.contains("index") || lower.contains("indexing")) {
+					return "status: INDEXING\nmessage: " + name;
+				}
+				// Exclude Equinox framework internal "build" jobs (e.g. "Equinox Coordinator")
+				// which are unrelated to project compilation and always running.
+				if (lower.contains("build") && !lower.contains("equinox")) {
+					return "status: BUILDING\nmessage: " + name;
+				}
+			}
+
+			// 2. Check workspace markers for classpath / Maven problems → WARNING
+			IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
+
+			List<String> issues = new ArrayList<>();
+			boolean hasIssue = false;
+
+			// JDT build-path problem markers (unresolved classpath entries, etc.)
+			IMarker[] classpathMarkers = root.findMarkers(
+					"org.eclipse.jdt.core.buildpath_problem", true, IResource.DEPTH_INFINITE);
+			for (IMarker m : classpathMarkers) {
+				int severity = m.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO);
+				if (severity >= IMarker.SEVERITY_WARNING) {
+					hasIssue = true;
+				}
+				String sev = severity == IMarker.SEVERITY_ERROR ? "ERROR" : "WARNING";
+				issues.add("  [" + sev + "] " + m.getResource().getFullPath()
+						+ ": " + m.getAttribute(IMarker.MESSAGE, ""));
+			}
+
+			// m2e Maven project markers (missing dependencies, POM errors, etc.)
+			IMarker[] m2eMarkers = root.findMarkers(
+					"org.eclipse.m2e.core.maven2Problem", true, IResource.DEPTH_INFINITE);
+			for (IMarker m : m2eMarkers) {
+				int severity = m.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO);
+				if (severity >= IMarker.SEVERITY_WARNING) {
+					hasIssue = true;
+				}
+				String sev = severity == IMarker.SEVERITY_ERROR ? "ERROR" : "WARNING";
+				issues.add("  [" + sev + "] (Maven) " + m.getResource().getFullPath()
+						+ ": " + m.getAttribute(IMarker.MESSAGE, ""));
+			}
+
+			// 3. Count compilation errors / warnings
+			IMarker[] problemMarkers = root.findMarkers(
+					"org.eclipse.jdt.core.problem", true, IResource.DEPTH_INFINITE);
+			int errorCount = 0;
+			int warningCount = 0;
+			for (IMarker m : problemMarkers) {
+				int severity = m.getAttribute(IMarker.SEVERITY, IMarker.SEVERITY_INFO);
+				if (severity == IMarker.SEVERITY_ERROR) {
+					errorCount++;
+				} else if (severity == IMarker.SEVERITY_WARNING) {
+					warningCount++;
+				}
+			}
+
+			// 4. Build response
+			String status = hasIssue ? "WARNING" : "READY";
+			StringBuilder sb = new StringBuilder();
+			sb.append("status: ").append(status).append('\n');
+
+			IProject[] projects = root.getProjects();
+			sb.append("projects: ").append(projects.length).append('\n');
+			for (IProject project : projects) {
+				sb.append("  - ").append(project.getName());
+				if (!project.isOpen()) {
+					sb.append(" (closed)");
+				}
+				sb.append('\n');
+			}
+
+			if (!issues.isEmpty()) {
+				sb.append("classpath_issues:\n");
+				for (String issue : issues) {
+					sb.append(issue).append('\n');
+				}
+			}
+
+			sb.append("compilation_errors: ").append(errorCount).append('\n');
+			sb.append("compilation_warnings: ").append(warningCount);
+			return sb.toString();
+
+		} catch (Exception e) {
+			return "status: ERROR\nmessage: " + e.getMessage();
+		}
+	}
+
 	// ---- MCP server registration ----
 
 	/**
@@ -320,7 +449,15 @@ public class JdtlsMcpTools {
 						"uri", prop("string",
 							"Absolute file URI (e.g. file:///path/to/MyClass.java). Omit for workspace-wide diagnostics.")),
 					List.of()),
-				this::mcpDiagnostics);
+				this::mcpDiagnostics)
+
+			.toolCall(tool("java_workspace_status",
+					"Returns the current state of the jdtls workspace (project import progress, "
+					+ "build status, index readiness, classpath / Maven dependency errors). "
+					+ "Call this before running other tools to verify the workspace is ready, "
+					+ "or to diagnose dependency-resolution failures.",
+					Map.of(), List.of()),
+				this::mcpWorkspaceStatus);
 	}
 
 	// ---- MCP handler adapters ----
@@ -364,6 +501,11 @@ public class JdtlsMcpTools {
 		Map<String, Object> arguments = req.arguments();
 		Object uriValue = arguments != null ? arguments.get("uri") : null;
 		return text(diagnostics(uriValue != null ? uriValue.toString() : ""));
+	}
+
+	private McpSchema.CallToolResult mcpWorkspaceStatus(McpSyncServerExchange ex,
+			McpSchema.CallToolRequest req) {
+		return text(workspaceStatus());
 	}
 
 	// ---- Schema helpers ----
