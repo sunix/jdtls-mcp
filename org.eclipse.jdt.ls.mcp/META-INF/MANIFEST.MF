@@ -11,6 +11,7 @@ Automatic-Module-Name: org.eclipse.jdt.ls.mcp
 Require-Bundle: org.eclipse.jdt.ls.core,
  org.eclipse.core.runtime,
  org.eclipse.core.resources,
+ org.eclipse.core.jobs,
  org.eclipse.lsp4j,
  io.modelcontextprotocol.sdk.mcp-core,
  io.modelcontextprotocol.sdk.mcp-json-jackson2,

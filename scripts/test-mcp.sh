@@ -89,6 +89,9 @@ mkfifo "$FIFO"
   # java_diagnostics — check for compilation errors across the whole workspace
   printf '%s\n' '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"java_diagnostics","arguments":{}}}'
 
+  # java_workspace_status — check overall workspace readiness
+  printf '%s\n' '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"java_workspace_status","arguments":{}}}'
+
   # Keep stdin open until server exits or timeout
   sleep 300
 } > "$FIFO" &
