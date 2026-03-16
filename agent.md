@@ -315,7 +315,7 @@ Add the following header at the top of every new Java source file:
 
 ```java
 /*******************************************************************************
- * Copyright (c) 2025 contributors and others.
+ * Copyright (c) 2026 contributors and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
