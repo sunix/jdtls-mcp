@@ -788,4 +788,4 @@ existing tools.
 
 ## Licence
 
-Apache 2.0
+[EPL-2.0](LICENSE)

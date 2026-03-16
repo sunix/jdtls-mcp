@@ -299,3 +299,28 @@ build: upgrade Tycho to 5.1.0
 - [vscode-java](https://github.com/redhat-developer/vscode-java) — reference implementation of a jdtls client
 - [Tycho documentation](https://tycho.eclipseprojects.io/doc/latest/)
 - [langchain4j `@Tool` annotations](https://docs.langchain4j.dev/tutorials/tools)
+
+---
+
+## Licence
+
+This project is licensed under the **Eclipse Public License 2.0 (EPL-2.0)**.
+See the [LICENSE](LICENSE) file at the repository root for the full text.
+
+SPDX-License-Identifier: `EPL-2.0`
+
+### Copyright header template for new source files
+
+Add the following header at the top of every new Java source file:
+
+```java
+/*******************************************************************************
+ * Copyright (c) 2025 contributors and others.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/legal/epl-2.0/
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ *******************************************************************************/
+```
