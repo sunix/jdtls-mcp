@@ -59,6 +59,18 @@ for _jh in "${JAVA_HOME_21_X64:-}" "${JAVA_HOME_21_ARM64:-}" "${JAVA_HOME:-}"; d
 done
 echo "  java      : $JAVA_CMD" >&2
 
+# ---- Verify Java 21+ --------------------------------------------------------
+# Without this check, a stale default `java` on PATH (with none of the
+# JAVA_HOME* vars above set) fails deep inside the OSGi launcher with a much
+# less helpful error than a clear version mismatch message.
+JAVA_MAJOR="$("$JAVA_CMD" -version 2>&1 | head -1 | grep -oE '"[0-9]+' | tr -d '"')"
+if [[ -z "$JAVA_MAJOR" || "$JAVA_MAJOR" -lt 21 ]]; then
+  echo "ERROR: jdtls-mcp requires Java 21+, found ${JAVA_MAJOR:-an unrecognised version} at $JAVA_CMD" >&2
+  echo "       Set JAVA_HOME (or JAVA_HOME_21_X64 / JAVA_HOME_21_ARM64) to a Java 21+" >&2
+  echo "       install and re-run — e.g. 'sdk use java 21' if using SDKMAN." >&2
+  exit 1
+fi
+
 # ---- Arguments ------------------------------------------------------------
 WORKSPACE="${1:-$REPO_DIR/test-workspace/hello-jdtls}"
 DATA_DIR="${2:-/tmp/jdtls-mcp-data}"
