@@ -158,17 +158,29 @@ Download the archive for your platform from the
 [**Releases page**](https://github.com/sunix/jdtls-mcp/releases/latest),
 extract it, and you're ready to go — no build step required.
 
+Release assets are named with their version tag (e.g.
+`jdtls-mcp-v1.0.1-linux-x86_64.tar.gz`), so `releases/latest/download/<name>`
+only works if you hardcode the current version. Resolve it first instead:
+
 ```bash
+# Resolve the latest version tag once
+VERSION=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+  https://github.com/sunix/jdtls-mcp/releases/latest | sed 's#.*/tag/##')
+
 # Linux x86_64
-curl -L https://github.com/sunix/jdtls-mcp/releases/latest/download/jdtls-mcp-linux-x86_64.tar.gz \
+curl -L "https://github.com/sunix/jdtls-mcp/releases/download/${VERSION}/jdtls-mcp-${VERSION}-linux-x86_64.tar.gz" \
   | tar xz
 cd jdtls-mcp
 
 # macOS arm64 (Apple Silicon)
-curl -L https://github.com/sunix/jdtls-mcp/releases/latest/download/jdtls-mcp-macos-aarch64.tar.gz \
+curl -L "https://github.com/sunix/jdtls-mcp/releases/download/${VERSION}/jdtls-mcp-${VERSION}-macos-aarch64.tar.gz" \
   | tar xz
 cd jdtls-mcp
 ```
+
+Other platforms follow the same `jdtls-mcp-${VERSION}-<platform>.<ext>` naming
+— see the [Releases page](https://github.com/sunix/jdtls-mcp/releases/latest)
+for the full list of assets.
 
 The extracted directory contains `plugins/`, `configuration/`, and `scripts/`.
 
