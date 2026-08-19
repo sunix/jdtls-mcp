@@ -116,6 +116,7 @@ existing tools.
 | `java_document_symbols` | List all symbols in a file |
 | `java_workspace_symbols` | Search for symbols across the workspace |
 | `java_diagnostics` | Get compilation errors and warnings for a file or workspace |
+| `java_workspace_status` | Report jdtls workspace readiness — project import progress, build status, index readiness, and classpath/Maven dependency errors. Call before other tools to check the workspace is ready, or to diagnose dependency-resolution failures |
 
 All position-based tools use **0-based** line and character offsets (LSP convention).
 
