@@ -402,7 +402,10 @@ public class JdtlsMcpTools {
 	public void registerTools(McpServer.SyncSpecification<?> spec) {
 		spec
 			.toolCall(tool("java_hover",
-					"Get hover information (Javadoc, type info) for the Java symbol at a given position.",
+					"Get the compiler-resolved type and Javadoc for the Java symbol at this exact position — "
+					+ "useful when you have a position (e.g. from java_workspace_symbols) but haven't opened "
+					+ "the file yet, or want the fully-resolved type of an inferred/generic expression that "
+					+ "isn't spelled out in the source.",
 					Map.of(
 						"uri",       prop("string",  "Absolute file URI, e.g. file:///path/to/MyClass.java"),
 						"line",      prop("integer", "0-based line number"),
@@ -411,7 +414,12 @@ public class JdtlsMcpTools {
 				this::mcpHover)
 
 			.toolCall(tool("java_definition",
-					"Find the definition of the Java symbol (class, method, field) at the given position.",
+					"Jump to the exact declaration of the Java symbol (class, method, or field) at this "
+					+ "position, resolved by the compiler's semantic model — correctly follows imports, "
+					+ "inheritance, and overload resolution to the real declaration. More reliable than a "
+					+ "text search for the symbol's name, which can match unrelated same-named symbols "
+					+ "elsewhere in the codebase. If you don't yet have a position, call "
+					+ "java_workspace_symbols or java_document_symbols first.",
 					Map.of(
 						"uri",       prop("string",  "Absolute file URI, e.g. file:///path/to/MyClass.java"),
 						"line",      prop("integer", "0-based line number"),
@@ -420,7 +428,14 @@ public class JdtlsMcpTools {
 				this::mcpDefinition)
 
 			.toolCall(tool("java_references",
-					"Find all references to the Java symbol at the given position.",
+					"Find every real usage of the Java symbol (method, field, class) at this position, "
+					+ "resolved by the compiler's semantic model — not text matching. Correctly "
+					+ "distinguishes overloaded methods, inherited members, and shadowed names, and won't "
+					+ "return false positives from comments, string literals, or unrelated same-named "
+					+ "symbols. Prefer this over grep whenever you need every call site of a method or "
+					+ "every usage of a field — e.g. before renaming it or changing its signature. If you "
+					+ "don't yet have a position, call java_workspace_symbols or java_document_symbols "
+					+ "first.",
 					Map.of(
 						"uri",                prop("string",  "Absolute file URI, e.g. file:///path/to/MyClass.java"),
 						"line",               prop("integer", "0-based line number"),
@@ -439,14 +454,21 @@ public class JdtlsMcpTools {
 				this::mcpCompletion)
 
 			.toolCall(tool("java_document_symbols",
-					"List all symbols (classes, methods, fields) defined in a Java source file.",
+					"List every symbol (class, method, field) declared in a Java source file, each with "
+					+ "its exact position — a fast structural outline without reading the full file "
+					+ "contents. Each result's line/character can be fed directly into java_definition, "
+					+ "java_references, or java_hover.",
 					Map.of(
 						"uri", prop("string", "Absolute file URI, e.g. file:///path/to/MyClass.java")),
 					List.of("uri")),
 				this::mcpDocumentSymbols)
 
 			.toolCall(tool("java_workspace_symbols",
-					"Search for Java symbols (classes, methods, fields) by name across the workspace.",
+					"Search for a Java class, method, or field by name anywhere in the workspace — the "
+					+ "starting point when you know a symbol's name but not its file or position. Unlike "
+					+ "grep, this only matches actual declared Java symbols, not comments, string "
+					+ "literals, or unrelated text, and each result includes the exact file URI and "
+					+ "line/character you can feed directly into java_definition or java_references.",
 					Map.of(
 						"query", prop("string", "Search query, e.g. a class name or method name prefix")),
 					List.of("query")),
