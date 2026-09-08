@@ -69,6 +69,20 @@ public class McpApplication implements IApplication {
 	private static final String SERVER_NAME    = "jdtls-mcp";
 	private static final String SERVER_VERSION = "1.0.0";
 
+	// Read by MCP clients that support tool search (e.g. Claude Code) to decide
+	// when to look up this server's tools at all, since their schemas are
+	// deferred by default rather than loaded upfront. Keep this short and
+	// trigger-focused, not a full manual — the tool descriptions carry the
+	// detail once a client actually looks them up.
+	private static final String SERVER_INSTRUCTIONS =
+			"Semantically-precise Java code intelligence backed by the real compiler/type model — "
+			+ "not text matching. Prefer these tools over grep/text search whenever the task involves "
+			+ "finding a Java symbol's definition, every real call site of a method or field (e.g. "
+			+ "before a rename or signature change), or searching for a class/method by name across the "
+			+ "workspace. Prefer java_diagnostics over running a full Maven build when you only need to "
+			+ "check whether the code still compiles after an edit — still run the project's own "
+			+ "test command to actually run the test suite; diagnostics only reports compile errors.";
+
 	private McpSyncServer mcpServer;
 	private final CountDownLatch shutdownLatch = new CountDownLatch(1);
 
@@ -190,7 +204,8 @@ public class McpApplication implements IApplication {
 		StdioServerTransportProvider transport = new StdioServerTransportProvider(McpJsonDefaults.getMapper());
 
 		var spec = McpServer.sync(transport)
-				.serverInfo(SERVER_NAME, SERVER_VERSION);
+				.serverInfo(SERVER_NAME, SERVER_VERSION)
+				.instructions(SERVER_INSTRUCTIONS);
 		spec.capabilities(McpSchema.ServerCapabilities.builder()
 				.tools(true)
 				.build());
